@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "Android Studio Reusable MCP Development Environment",
+  "version": "1.0.0",
+  "description": "Global, project-independent Model Context Protocol (MCP) configuration for Android, React Native, and Mobile development in Android Studio.",
+  "environment": {
+    "autoDetect": {
+      "os": "System.getProperty('os.name')",
+      "javaHome": "env:JAVA_HOME",
+      "androidHome": "env:ANDROID_HOME || env:ANDROID_SDK_ROOT || ~/AppData/Local/Android/Sdk",
+      "projectType": ["Native_Android_Kotlin_Java", "React_Native_TypeScript_JavaScript", "Multi_Module_Gradle", "Android_Native_Module"],
+      "connectedDevices": "adb devices -l",
+      "availableAvds": "emulator -list-avds"
+    }
+  },
+  "capabilities": {
+    "filesystem": {
+      "enabled": true,
+      "tools": ["read_file", "write_file", "replace_file_content", "multi_replace_file_content", "list_files", "find_files", "view_file_outline"],
+      "rules": {
+        "scope": "ACTIVE_PROJECT_ROOT_ONLY",
+        "confirmationRequiredFor": ["delete_file", "move_file", "overwrite_uninspected_file"],
+        "surgicalEditsPreferred": true
+      }
+    },
+    "terminal": {
+      "enabled": true,
+      "tools": ["run_shell_command"],
+      "allowedExecutables": ["adb", "emulator", "gradlew", "./gradlew", "gradle", "npm", "npx", "yarn", "pnpm", "node", "java", "javac", "git", "powershell", "bash"],
+      "rules": {
+        "displayCommandBeforeExecution": true,
+        "captureOutputs": ["stdout", "stderr", "exitCode"],
+        "destructiveConfirmation": true
+      }
+    },
+    "androidAdb": {
+      "enabled": true,
+      "tools": ["adb_shell_input", "take_screenshot", "ui_state", "read_logcat", "deploy", "run_shell_command"],
+      "capabilities": ["device_discovery", "install_apk", "uninstall_apk", "launch_activity", "force_stop", "clear_data", "grant_permissions", "dumpsys", "logcat", "pull_push"],
+      "rules": {
+        "discoverDevicesFirst": true,
+        "hardcodedDeviceIdsAllowed": false,
+        "confirmationRequiredFor": ["uninstall_apk", "clear_app_data", "reset_device"]
+      }
+    },
+    "emulator": {
+      "enabled": true,
+      "tools": ["run_shell_command"],
+      "capabilities": ["list_avds", "start_avd", "stop_avd", "detect_running_avd", "deploy_app", "capture_screenshot", "logs"],
+      "rules": {
+        "confirmationRequiredFor": ["wipe_avd_data", "delete_avd", "create_new_avd"]
+      }
+    },
+    "gradle": {
+      "enabled": true,
+      "tools": ["gradle_build", "gradle_sync", "get_gradle_artifact_from_file", "run_shell_command"],
+      "capabilities": ["sync", "assembleDebug", "assembleRelease", "clean", "test", "dependency_tree", "error_analysis"],
+      "rules": {
+        "distinguishWarningsFromErrors": true,
+        "arbitrarySdkUpgradesAllowed": false,
+        "verifyBuildOutputBeforeClaimingSuccess": true
+      }
+    },
+    "codeIntelligence": {
+      "enabled": true,
+      "tools": ["code_search", "find_declaration", "find_usages", "grep"],
+      "capabilities": ["symbol_search", "class_search", "function_search", "interface_search", "reference_search", "dependency_search"],
+      "rules": {
+        "inspectSurroundingContextBeforeEdit": true
+      }
+    },
+    "testing": {
+      "enabled": true,
+      "tools": ["get_test_task_for_artifact", "gradle_build", "run_shell_command"],
+      "supportedFrameworks": ["JUnit", "AndroidInstrumentationTests", "Jest", "TypeScriptCheck", "ESLint"],
+      "rules": {
+        "actualExecutionRequired": true,
+        "reportPassFailSummaries": true,
+        "neverHideTestFailures": true
+      }
+    },
+    "gitLocal": {
+      "enabled": true,
+      "remoteIntegrations": {
+        "github": false,
+        "gitlab": false,
+        "bitbucket": false
+      },
+      "readOnlyTools": ["git status", "git diff", "git log", "git branch"],
+      "modifyingTools": ["git commit", "git merge", "git rebase", "git cherry-pick", "git stash", "git checkout", "git switch"],
+      "destructiveTools": ["git reset --hard", "git clean -fd", "git branch -D"],
+      "rules": {
+        "explainOperationBeforeExecution": true,
+        "forcePushAllowed": false,
+        "confirmationRequiredForDestructive": true
+      }
+    },
+    "restApi": {
+      "enabled": true,
+      "tools": ["curl", "node_fetch_script", "read_url"],
+      "capabilities": ["GET", "POST", "PUT", "PATCH", "DELETE", "headers", "query_params", "json_body", "multipart_form"],
+      "rules": {
+        "neverExposeAuthTokens": true,
+        "neverPrintApiKeys": true,
+        "neverStoreCredentialsInCode": true,
+        "neverInventApiContracts": true
+      }
+    },
+    "debugging": {
+      "enabled": true,
+      "tools": ["read_logcat", "run_shell_command"],
+      "diagnosticProcedure": [
+        "CAPTURE_ERROR",
+        "IDENTIFY_ROOT_CAUSE",
+        "INSPECT_CONFIGURATION_OR_CODE",
+        "PROPOSE_MINIMAL_FIX",
+        "VALIDATE_WITH_BUILD_OR_TEST"
+      ]
+    },
+    "reactNativeSupport": {
+      "conditional": true,
+      "triggerFiles": ["package.json", "metro.config.js", "index.js"],
+      "tools": ["npx react-native", "metro", "npm", "yarn", "pnpm", "tsc", "jest", "eslint"],
+      "rules": {
+        "doNotRunInNativeOnlyProjects": true
+      }
+    },
+    "security": {
+      "protectedTypes": ["API_KEYS", "OAUTH_TOKENS", "PASSWORDS", "DOTENV_VALUES", "KEYSTORE_PASSWORDS", "CERTIFICATES", "CLOUD_CREDENTIALS"],
+      "rules": {
+        "neverCommitSecrets": true,
+        "neverPrintSecrets": true,
+        "neverUploadSecrets": true,
+        "neverHardcodeSecrets": true,
+        "useEnvOrLocalProperties": true
+      }
+    }
+  },
+  "workflowPipeline": [
+    {
+      "step": 1,
+      "name": "DISCOVER",
+      "actions": ["detect_os", "detect_jdk", "detect_sdk", "detect_project_type", "detect_devices", "detect_avds"]
+    },
+    {
+      "step": 2,
+      "name": "BUILD",
+      "actions": ["verify_config", "check_dependencies", "sync_gradle", "compile", "report_errors"]
+    },
+    {
+      "step": 3,
+      "name": "TEST",
+      "actions": ["detect_test_framework", "run_unit_tests", "run_instrumentation", "run_typecheck_and_lint", "report_summary"]
+    },
+    {
+      "step": 4,
+      "name": "DEPLOY",
+      "actions": ["verify_apk_bundle", "discover_target_device", "install_app", "launch_activity", "verify_start"]
+    },
+    {
+      "step": 5,
+      "name": "DEBUG",
+      "actions": ["stream_logcat", "identify_root_cause", "inspect_code", "apply_minimal_fix", "revalidate"]
+    }
+  ],
+  "futureOptionalIntegrations": {
+    "githubMcp": false,
+    "firebaseMcp": false,
+    "googleCloudMcp": false,
+    "awsMcp": false,
+    "azureMcp": false,
+    "googleMapsMcp": false,
+    "mapboxMcp": false,
+    "usbUvcCameraMcp": false,
+    "bluetoothMcp": false,
+    "aiMlProviderMcp": false,
+    "googlePlayConsoleMcp": false
+  }
+}

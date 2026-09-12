@@ -1,0 +1,17 @@
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
+
+export type RootStackParamList = {
+  Home: undefined;
+  Navigation: undefined;
+  Camera: undefined;
+  ObjectDetection: undefined;
+  SOS: undefined;
+  Settings: undefined;
+};
+
+export type RootStackNavigationProp<T extends keyof RootStackParamList> =
+  NativeStackNavigationProp<RootStackParamList, T>;
+
+export type RootStackRouteProp<T extends keyof RootStackParamList> =
+  RouteProp<RootStackParamList, T>;

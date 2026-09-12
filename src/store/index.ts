@@ -1,0 +1,4 @@
+/**
+ * State management placeholder
+ */
+export {};
