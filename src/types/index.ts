@@ -119,10 +119,13 @@ export interface ApiResponse<T = unknown> {
   timestamp: number;
 }
 
+export type TTSLanguage = 'en-US' | 'ha-NG';
+
 export interface TTSPreferences {
   speechRate: number; // 0.5 to 2.0
   pitch: number;      // 0.5 to 2.0
   autoAnnounceDetections: boolean;
+  language: TTSLanguage;
 }
 
 export interface DetectionPreferences {

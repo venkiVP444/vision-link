@@ -10,10 +10,10 @@ export interface EnvironmentConfig {
 }
 
 export const Config: EnvironmentConfig = {
-  // Configured for local development backend API
-  API_BASE_URL: 'http://10.0.2.2:5000',
+  // Configured with live ngrok backend API
+  API_BASE_URL: 'https://art-earring-bright.ngrok-free.dev',
   ENVIRONMENT: 'development',
-  TIMEOUT_MS: 15000,
+  TIMEOUT_MS: 30000,
 };
 
 export default Config;

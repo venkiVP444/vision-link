@@ -9,6 +9,7 @@ import {
 } from '../components';
 import { Colors, Typography, Spacing } from '../theme';
 import { ttsService } from '../features/tts/ttsService';
+import { TTSLanguage } from '../types';
 
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -20,6 +21,9 @@ export const SettingsScreen: React.FC = () => {
   // Voice & TTS Settings
   const [autoAnnounce, setAutoAnnounce] = useState<boolean>(true);
   const [speechRateFast, setSpeechRateFast] = useState<boolean>(false);
+  const [ttsLanguage, setTtsLanguage] = useState<TTSLanguage>(
+    ttsService.getPreferences().language || 'en-US'
+  );
 
   // Detection Preferences
   const [strictThreshold, setStrictThreshold] = useState<boolean>(false);
@@ -29,9 +33,13 @@ export const SettingsScreen: React.FC = () => {
   const [cameraAutoConnect, setCameraAutoConnect] = useState<boolean>(true);
 
   const handleTestVoice = async () => {
-    await ttsService.speak(
-      'This is a voice feedback test for the Vision-Link assistive interface.'
-    );
+    if (ttsLanguage === 'ha-NG') {
+      await ttsService.speak('Wannan gwajin muryar Vision-Link ne.');
+    } else {
+      await ttsService.speak(
+        'This is a voice feedback test for the Vision-Link assistive interface.'
+      );
+    }
   };
 
   const handleToggleSpeechRate = () => {
@@ -39,7 +47,22 @@ export const SettingsScreen: React.FC = () => {
     setSpeechRateFast(nextFast);
     const newRate = nextFast ? 1.4 : 1.0;
     ttsService.setPreferences({ speechRate: newRate });
-    ttsService.speak(`Speech rate set to ${nextFast ? '1.4x fast' : '1.0x standard'}.`);
+    if (ttsLanguage === 'ha-NG') {
+      ttsService.speak(`Gudun murya: ${nextFast ? 'Sauri' : 'Daidai'}.`);
+    } else {
+      ttsService.speak(`Speech rate set to ${nextFast ? '1.4x fast' : '1.0x standard'}.`);
+    }
+  };
+
+  const handleToggleLanguage = () => {
+    const nextLang: TTSLanguage = ttsLanguage === 'en-US' ? 'ha-NG' : 'en-US';
+    setTtsLanguage(nextLang);
+    ttsService.setPreferences({ language: nextLang });
+    if (nextLang === 'ha-NG') {
+      ttsService.speak('An sa harshe zuwa Hausa.');
+    } else {
+      ttsService.speak('Speech language set to English.');
+    }
   };
 
   return (
@@ -102,6 +125,34 @@ export const SettingsScreen: React.FC = () => {
       {/* Spoken Voice / TTS Section */}
       <View style={styles.section}>
         <Text style={styles.sectionHeader}>Spoken Guidance & Audio</Text>
+
+        <AccessibleCard
+          variant="outlined"
+          style={styles.settingCard}
+          accessibilityLabel={`Spoken language is currently ${
+            ttsLanguage === 'ha-NG' ? 'Hausa ha-NG' : 'English en-US'
+          }`}
+        >
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingTitle}>Spoken Guidance Language</Text>
+              <Text style={styles.settingSubtitle}>
+                {ttsLanguage === 'ha-NG'
+                  ? 'Hausa (ha-NG) — "Akwai mutum a gabanka, ka kula."'
+                  : 'English (en-US) — "Person ahead. Please be careful."'}
+              </Text>
+            </View>
+            <AccessibleButton
+              title={ttsLanguage === 'ha-NG' ? 'Hausa (ha-NG)' : 'English (en-US)'}
+              accessibilityLabel={`Change spoken language. Currently ${
+                ttsLanguage === 'ha-NG' ? 'Hausa' : 'English'
+              }`}
+              variant="primary"
+              onPress={handleToggleLanguage}
+              style={styles.langButton}
+            />
+          </View>
+        </AccessibleCard>
 
         <AccessibleCard
           variant="outlined"
@@ -256,7 +307,7 @@ const styles = StyleSheet.create({
   },
   settingInfo: {
     flex: 1,
-    marginRight: Spacing.md,
+    marginRight: Spacing.sm,
   },
   settingTitle: {
     ...Typography.titleMedium,
@@ -267,6 +318,10 @@ const styles = StyleSheet.create({
     ...Typography.bodyMedium,
     color: Colors.onSurfaceVariant,
     marginTop: Spacing.xs,
+  },
+  langButton: {
+    marginVertical: 0,
+    minWidth: 120,
   },
 });
 

@@ -54,6 +54,7 @@ export class ApiService {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
@@ -87,6 +88,7 @@ export class ApiService {
 
       return jsonResponse;
     } catch (error: unknown) {
+      console.log('[apiService Error]', error);
       const errorMessage =
         error instanceof Error
           ? error.name === 'AbortError'

@@ -78,5 +78,9 @@ yarn-error.log
 .env
 .env.*
 *.tmp
-/screen*.png
-/emulator_screen.png
+*.png
+*.mp4
+*.ps1
+capture_ui.py
+generate_final_demo.py
+build_video_from_app_screens.py

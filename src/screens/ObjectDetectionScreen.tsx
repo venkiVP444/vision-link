@@ -41,7 +41,10 @@ export const ObjectDetectionScreen: React.FC = () => {
   });
 
   useEffect(() => {
-    const unsubTTS = ttsService.onStateChange((isSpk) => setSpeaking(isSpk));
+    const unsubTTS = ttsService.onStateChange((isSpk) => {
+      console.log('[ObjectDetectionScreen] speaking changed to:', isSpk);
+      setSpeaking(isSpk);
+    });
     const unsubCam = cameraService.onStatusChange((status) => {
       setCameraStatus(status);
     });
@@ -114,6 +117,7 @@ export const ObjectDetectionScreen: React.FC = () => {
   };
 
   const handleManualAnnounce = async () => {
+    console.log('[handleManualAnnounce] Tapped, displayState:', displayState, 'warningText:', warningText);
     if (displayState === 'warning' && warningText) {
       await ttsService.speak(`Obstacle warning: ${warningText}`);
     } else if (displayState === 'no-warning') {
@@ -254,13 +258,24 @@ export const ObjectDetectionScreen: React.FC = () => {
 
       {/* Backend API Integration Architecture Details */}
       <View style={styles.infoSection}>
-        <Text style={styles.sectionHeader}>API Contract Details</Text>
+        <Text style={styles.sectionHeader}>API Contract & Voice Language</Text>
         <StatusCard
           label="Backend Endpoint"
           value="POST /api/detect"
           badgeText="Active Contract"
           statusType="info"
-          description='Request payload: { "image": "BASE64" }\nResponses: { "status": "success", "warning": "Person ahead." } or { "status": "success", "warning": null }'
+          description='Request payload: { "image": "BASE64" }\nResponses: { "status": "success", "warning": "Person ahead." }'
+        />
+        <StatusCard
+          label="Spoken Voice Language"
+          value={ttsService.getPreferences().language === 'ha-NG' ? 'Hausa (ha-NG)' : 'English (en-US)'}
+          badgeText={ttsService.checkLanguageSupport(ttsService.getPreferences().language).supported ? 'Ready' : 'Fallback'}
+          statusType="success"
+          description={
+            ttsService.getPreferences().language === 'ha-NG'
+              ? 'Hausa Voice active: "Akwai mutum a gabanka, ka kula."'
+              : 'English Voice active: "Person ahead. Please be careful."'
+          }
         />
       </View>
     </ScrollView>

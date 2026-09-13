@@ -16,6 +16,7 @@
  */
 
 import { CameraDeviceInfo, CameraStatus } from '../../types';
+import { SAMPLE_PERSON_FRAME } from './mockFrame';
 
 export type CameraStatusListener = (status: CameraStatus) => void;
 
@@ -109,8 +110,12 @@ export class CameraService implements ICameraService {
     if (this.status !== 'streaming' && this.status !== 'connected') {
       return null;
     }
-    // Returns simulated base64 preview frame placeholder
-    return 'data:image/jpeg;base64,mock_uvc_frame_data_placeholder';
+    // Architectural Integration Point:
+    // When external USB OTG UVC camera is physically attached, native libuvc /
+    // MediaCodec JNI bridge will supply real-time captured video frames here.
+    // In simulator/mock mode, returns a realistic test Base64 JPEG frame containing a person
+    // to verify the end-to-end live Roboflow AI detection pipeline.
+    return SAMPLE_PERSON_FRAME;
   }
 
   getStatus(): CameraStatus {

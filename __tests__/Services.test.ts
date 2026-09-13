@@ -81,6 +81,7 @@ describe('Vision-Link Service Layer', () => {
       expect(options.headers).toEqual({
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
       });
       expect(JSON.parse(options.body)).toEqual({
         image: 'BASE64_IMAGE_STRING',
@@ -191,6 +192,36 @@ describe('Vision-Link Service Layer', () => {
 
       ttsService.setPreferences({ speechRate: 1.4 });
       expect(ttsService.getPreferences().speechRate).toBe(1.4);
+    });
+
+    it('supports English and Hausa (ha-NG) speech translation for obstacle warnings', async () => {
+      // Default language is English
+      expect(ttsService.getPreferences().language).toBe('en-US');
+
+      const enWarning = 'Person ahead. Please be careful.';
+      expect(ttsService.translateText(enWarning, 'en-US')).toBe('Person ahead. Please be careful.');
+
+      // Switch to Hausa (ha-NG)
+      ttsService.setPreferences({ language: 'ha-NG' });
+      expect(ttsService.getPreferences().language).toBe('ha-NG');
+
+      // Verify translations for Person, Obstacle, Vehicle, and Path Clear
+      expect(ttsService.translateText('Person ahead.', 'ha-NG')).toBe('Akwai mutum a gabanka, ka kula.');
+      expect(ttsService.translateText('Obstacle ahead.', 'ha-NG')).toBe('Akwai cikas a gabanka, ka kula.');
+      expect(ttsService.translateText('Vehicle ahead.', 'ha-NG')).toBe('Akwai mota a gabanka, ka kula.');
+      expect(ttsService.translateText('Path clear. No obstacle warnings detected.', 'ha-NG')).toBe('Hanya a buɗe take, babu wani cikas.');
+
+      await ttsService.speak(enWarning);
+      expect(ttsService.getLastSpokenText()).toBe('Akwai mutum a gabanka, ka kula.');
+      await ttsService.stop();
+
+      // Verify language support check handles Hausa gracefully
+      const check = ttsService.checkLanguageSupport('ha-NG');
+      expect(check.supported).toBe(true);
+
+      // Reset to English
+      ttsService.setPreferences({ language: 'en-US' });
+      expect(ttsService.getPreferences().language).toBe('en-US');
     });
   });
 
