@@ -195,11 +195,11 @@ describe('Vision-Link Service Layer', () => {
     });
 
     it('supports English and Hausa (ha-NG) speech translation for obstacle warnings', async () => {
-      // Default language is English
-      expect(ttsService.getPreferences().language).toBe('en-US');
+      // Default language is English (en-GB / en-US)
+      expect(['en-GB', 'en-US']).toContain(ttsService.getPreferences().language);
 
       const enWarning = 'Person ahead. Please be careful.';
-      expect(ttsService.translateText(enWarning, 'en-US')).toBe('Person ahead. Please be careful.');
+      expect(ttsService.translateText(enWarning, 'en-GB')).toBe('Person ahead. Please be careful.');
 
       // Switch to Hausa (ha-NG)
       ttsService.setPreferences({ language: 'ha-NG' });

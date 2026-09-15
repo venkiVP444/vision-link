@@ -8,8 +8,9 @@ import {
   StatusCard,
 } from '../components';
 import { Colors, Typography, Spacing } from '../theme';
-import { ttsService } from '../features/tts/ttsService';
-import { TTSLanguage } from '../types';
+import { ttsService, TTS_LANGUAGE_OPTIONS } from '../features/tts/ttsService';
+import { TTSLanguage, TTSLanguageOption } from '../types';
+import { TouchableOpacity } from 'react-native';
 
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -22,7 +23,7 @@ export const SettingsScreen: React.FC = () => {
   const [autoAnnounce, setAutoAnnounce] = useState<boolean>(true);
   const [speechRateFast, setSpeechRateFast] = useState<boolean>(false);
   const [ttsLanguage, setTtsLanguage] = useState<TTSLanguage>(
-    ttsService.getPreferences().language || 'en-US'
+    ttsService.getPreferences().language || 'en-GB'
   );
 
   // Detection Preferences
@@ -33,12 +34,20 @@ export const SettingsScreen: React.FC = () => {
   const [cameraAutoConnect, setCameraAutoConnect] = useState<boolean>(true);
 
   const handleTestVoice = async () => {
-    if (ttsLanguage === 'ha-NG') {
-      await ttsService.speak('Wannan gwajin muryar Vision-Link ne.');
-    } else {
-      await ttsService.speak(
-        'This is a voice feedback test for the Vision-Link assistive interface.'
-      );
+    switch (ttsLanguage) {
+      case 'ha-NG':
+        await ttsService.speak('Akwai mutum a gabanka, ka kula.');
+        break;
+      case 'ar':
+        await ttsService.speak('يوجد شخص أمامك. يرجى توخي الحذر.');
+        break;
+      case 'hi-IN':
+        await ttsService.speak('सामने व्यक्ति है। कृपया सावधान रहें।');
+        break;
+      case 'en-GB':
+      default:
+        await ttsService.speak('Person ahead. Please be careful.');
+        break;
     }
   };
 
@@ -54,14 +63,23 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
-  const handleToggleLanguage = () => {
-    const nextLang: TTSLanguage = ttsLanguage === 'en-US' ? 'ha-NG' : 'en-US';
-    setTtsLanguage(nextLang);
-    ttsService.setPreferences({ language: nextLang });
-    if (nextLang === 'ha-NG') {
-      ttsService.speak('An sa harshe zuwa Hausa.');
-    } else {
-      ttsService.speak('Speech language set to English.');
+  const handleSelectLanguage = (option: TTSLanguageOption) => {
+    setTtsLanguage(option.code);
+    ttsService.setPreferences({ language: option.code });
+    switch (option.code) {
+      case 'ha-NG':
+        ttsService.speak('An sa harshe zuwa Hausa.');
+        break;
+      case 'ar':
+        ttsService.speak('يوجد شخص أمامك. يرجى توخي الحذر.');
+        break;
+      case 'hi-IN':
+        ttsService.speak('सामने व्यक्ति है। कृपया सावधान रहें।');
+        break;
+      case 'en-GB':
+      default:
+        ttsService.speak('Speech language set to English UK.');
+        break;
     }
   };
 
@@ -126,33 +144,53 @@ export const SettingsScreen: React.FC = () => {
       <View style={styles.section}>
         <Text style={styles.sectionHeader}>Spoken Guidance & Audio</Text>
 
-        <AccessibleCard
-          variant="outlined"
-          style={styles.settingCard}
-          accessibilityLabel={`Spoken language is currently ${
-            ttsLanguage === 'ha-NG' ? 'Hausa ha-NG' : 'English en-US'
-          }`}
+        <View
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Spoken Guidance Language Options"
+          style={styles.languageRadioGroup}
         >
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Spoken Guidance Language</Text>
-              <Text style={styles.settingSubtitle}>
-                {ttsLanguage === 'ha-NG'
-                  ? 'Hausa (ha-NG) — "Akwai mutum a gabanka, ka kula."'
-                  : 'English (en-US) — "Person ahead. Please be careful."'}
-              </Text>
-            </View>
-            <AccessibleButton
-              title={ttsLanguage === 'ha-NG' ? 'Hausa (ha-NG)' : 'English (en-US)'}
-              accessibilityLabel={`Change spoken language. Currently ${
-                ttsLanguage === 'ha-NG' ? 'Hausa' : 'English'
-              }`}
-              variant="primary"
-              onPress={handleToggleLanguage}
-              style={styles.langButton}
-            />
-          </View>
-        </AccessibleCard>
+          {TTS_LANGUAGE_OPTIONS.map((opt) => {
+            const isSelected = ttsLanguage === opt.code;
+            const talkBackLabel = `${opt.name}, ${opt.voiceName}, ${isSelected ? 'selected' : 'not selected'}`;
+            const displayTitle = `${opt.name} — ${opt.voiceName}`;
+
+            return (
+              <TouchableOpacity
+                key={opt.code}
+                accessible={true}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={talkBackLabel}
+                accessibilityHint={`Double tap to select ${opt.name} ${opt.voiceName} for spoken navigation feedback`}
+                style={[
+                  styles.languageOptionCard,
+                  isSelected && styles.languageOptionCardSelected,
+                ]}
+                onPress={() => handleSelectLanguage(opt)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.radioRow}>
+                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                    {isSelected && <View style={styles.radioInner} />}
+                  </View>
+                  <View style={styles.languageTextContainer}>
+                    <Text style={[styles.languageTitle, isSelected && styles.languageTitleSelected]}>
+                      {displayTitle}
+                    </Text>
+                    <View style={styles.badgeRow}>
+                      <Text style={styles.languageSubtitle}>{opt.nativeName}</Text>
+                      {opt.isOfflineNeural && (
+                        <View style={styles.neuralBadge}>
+                          <Text style={styles.neuralBadgeText}>OFFLINE NEURAL</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         <AccessibleCard
           variant="outlined"
@@ -322,6 +360,79 @@ const styles = StyleSheet.create({
   langButton: {
     marginVertical: 0,
     minWidth: 120,
+  },
+  languageRadioGroup: {
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  languageOptionCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.outlineVariant,
+    padding: Spacing.md,
+    minHeight: 56,
+    justifyContent: 'center',
+  },
+  languageOptionCardSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.primaryContainer,
+  },
+  radioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.outline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  radioOuterSelected: {
+    borderColor: Colors.primary,
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: Colors.primary,
+  },
+  languageTextContainer: {
+    flex: 1,
+  },
+  languageTitle: {
+    ...Typography.titleMedium,
+    color: Colors.onSurface,
+    fontWeight: '700',
+  },
+  languageTitleSelected: {
+    color: Colors.onPrimaryContainer,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+    gap: Spacing.xs,
+  },
+  languageSubtitle: {
+    ...Typography.bodyMedium,
+    color: Colors.onSurfaceVariant,
+  },
+  neuralBadge: {
+    backgroundColor: Colors.secondaryContainer,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  neuralBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: Colors.onSecondaryContainer,
+    letterSpacing: 0.5,
   },
 });
 
