@@ -8,6 +8,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
@@ -419,8 +420,13 @@ class PiperEnglishEngine private constructor(private val context: Context) {
 
             val bufferSize = max(minBufferSize, pcm16.size * 2)
 
+            val usage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                AudioAttributes.USAGE_ASSISTANT
+            } else {
+                AudioAttributes.USAGE_MEDIA
+            }
             val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                .setUsage(usage)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build()
 
