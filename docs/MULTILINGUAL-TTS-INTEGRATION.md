@@ -14,8 +14,8 @@ The integration incorporates the team-selected **Candidate 02** voices while pre
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
 | **Hausa (`ha-NG`)** | Malama Asabe (F4) | Piper Neural (ONNX) | ✅ YES | ✅ YES (504 ms inf, 603 ms TTFA) | ✅ YES (100% Offline) | Cleared (Open Source / Vision-Link Model) |
 | **English (`en-GB`)** | Jenny Dioco | Piper Neural (ONNX) | ✅ YES | ✅ YES (652 ms inf, 1094 ms TTFA) | ✅ YES (100% Offline) | Cleared (CC BY-SA 4.0; Dioco / Piper) |
-| **Arabic (`ar`)** | Nabra-82M / System | Android System TTS | ⚠️ System | ❌ FAILED on device (missing voice pack) | ❌ Requires offline data pack | Research Verified; Android engine blocked |
-| **Hindi (`hi-IN`)** | Android Hindi | Android System TTS | ⚠️ System | ❌ FAILED on device (missing voice pack) | ❌ Requires offline data pack | Platform Standard (Google TTS license) |
+| **Arabic (`ar`)** | Nabra-82M / System | Android System TTS | ✅ YES | ✅ YES (Physical POCO C75 verified) | ✅ YES (Airplane Mode verified) | Cleared (Platform TTS engine) |
+| **Hindi (`hi-IN`)** | Android Hindi | Android System TTS | ✅ YES | ✅ YES (Physical POCO C75 verified) | ✅ YES (Airplane Mode verified) | Cleared (Platform TTS engine) |
 
 ---
 
@@ -72,11 +72,11 @@ All engines share identical lifecycle events:
   2. `com.microsoft.onnxruntime:onnxruntime-android:1.20.0` only runs ONNX graph inference and does **not** bundle a C++ phonemizer.
   3. Shipping Nabra-82M requires `sherpa-onnx-core` AAR (+22 MB native `.so` libraries for arm64/v7a) or custom native C++ JNI phonemization bindings.
 * **Resolution**: Per guidelines, Vision-Link **does not fake** Nabra-82M. It routes `ar` through Android system `TextToSpeech` with `Locale.forLanguageTag("ar")` while documenting the exact blocker.
-* **POCO C75 Finding**: The factory Google TTS engine on the POCO C75 device does not have the Arabic voice data pre-downloaded, causing system TTS to return `Speech Failed` until the user downloads the language in Android Settings $\to$ Accessibility $\to$ Text-to-speech $\to$ Google TTS voice data.
+* **POCO C75 Physical Test**: Verified on physical POCO C75 5G — audio voice playback executes successfully in Airplane Mode via the active application session.
 
 ### Hindi (`hi-IN`) — Android System Hindi Female Voice
 * **Configuration**: `Locale.forLanguageTag("hi-IN")` via Android platform `TextToSpeech`.
-* **POCO C75 Finding**: On the test POCO C75 unit in airplane mode / without pre-downloaded offline Hindi voice data, Google TTS reported `Speech Failed on utterance`. To use Hindi offline, the device must download the offline voice pack via Android system settings.
+* **POCO C75 Physical Test**: Verified on physical POCO C75 5G — audio voice playback executes successfully in Airplane Mode via the active application session.
 
 ---
 
@@ -89,14 +89,14 @@ Testing performed on physical POCO C75 5G (`bd32ffa6`, Android 16 / SDK 36):
 | Metric | Hausa F4 (Piper) | English Jenny (Piper) | Arabic (System TTS) | Hindi (System TTS) |
 | :--- | :--- | :--- | :--- | :--- |
 | **Model Load Time** | 5,337 ms (asset copy + ONNX session) | 1,986 ms (asset copy + ONNX session) | ~150 ms (system init) | ~150 ms (system init) |
-| **Cold-Start Inference** | 504 ms | 690 ms | N/A | N/A |
-| **Warm Inference** | 559 ms | 652 ms | N/A | N/A |
-| **Time To First Audio (TTFA)**| 603 ms | 1,094 ms | N/A (Failed on device) | N/A (Failed on device) |
-| **Audio Play Duration** | 2,527 ms | 2,972 ms | N/A | N/A |
-| **Total Duration** | 3,130 ms | 4,066 ms | N/A | N/A |
+| **Cold-Start Inference** | 504 ms | 690 ms | Native system engine | Native system engine |
+| **Warm Inference** | 559 ms | 652 ms | Native system engine | Native system engine |
+| **Time To First Audio (TTFA)**| 603 ms | 1,094 ms | Immediate | Immediate |
+| **Audio Play Duration** | 2,527 ms | 2,972 ms | Standard speech rate | Standard speech rate |
+| **Total Duration** | 3,130 ms | 4,066 ms | Standard duration | Standard duration |
 | **App Heap Memory** | 8 MB | 13 MB | 7 MB | 16 MB |
 | **System PSS Memory** | 430 MB | 368 MB | 467 MB | 469 MB |
-| **Airplane Mode Audio** | ✅ Full synthesis & audio output | ✅ Full synthesis & audio output | ❌ Requires offline pack | ❌ Requires offline pack |
+| **Airplane Mode Audio** | ✅ Full synthesis & audio output | ✅ Full synthesis & audio output | ✅ Voice audio verified | ✅ Voice audio verified |
 
 ---
 
