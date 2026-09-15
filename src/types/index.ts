@@ -50,6 +50,7 @@ export type CameraStatus =
   | 'connecting'
   | 'connected'
   | 'streaming'
+  | 'permission_required'
   | 'error';
 
 export interface CameraDeviceInfo {
@@ -119,7 +120,15 @@ export interface ApiResponse<T = unknown> {
   timestamp: number;
 }
 
-export type TTSLanguage = 'en-US' | 'ha-NG';
+export type TTSLanguage = 'ha-NG' | 'en-GB' | 'ar' | 'hi-IN' | 'en-US';
+
+export interface TTSLanguageOption {
+  code: TTSLanguage;
+  name: string;
+  nativeName: string;
+  voiceName: string;
+  isOfflineNeural: boolean;
+}
 
 export interface TTSPreferences {
   speechRate: number; // 0.5 to 2.0

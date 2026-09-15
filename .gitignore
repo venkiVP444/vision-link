@@ -81,6 +81,16 @@ yarn-error.log
 *.png
 *.mp4
 *.ps1
+*.apk
+*.aab
+*.jks
+*.tar.bz2
+.venv/
+scratch/
+capture_*.png
 capture_ui.py
 generate_final_demo.py
 build_video_from_app_screens.py
+offline-tts-research/models/
+android/.gradle/
+android/local.properties
