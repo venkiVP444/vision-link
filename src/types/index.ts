@@ -3,36 +3,17 @@
  * Reusable strongly-typed domain interfaces for camera, AI, navigation, SOS, and services.
  */
 
-// Backend Obstacle Detection API Contract
-export interface DetectImageRequest {
-  image: string; // Base64 image string
-}
+export type SpatialPosition = 'ahead' | 'left' | 'right' | 'center';
 
-export interface DetectImageSuccessResponse {
-  status: 'success';
-  warning: string | null;
-}
-
-export interface DetectImageErrorResponse {
-  status: 'error';
-  message: string;
-}
-
-export type DetectImageResponse = DetectImageSuccessResponse | DetectImageErrorResponse;
-
-export interface DetectionResult {
-  status: 'success' | 'error';
-  warning: string | null;
-  errorMessage?: string;
-  timestamp: number;
-}
-
-// Bounding Box & Legacy Detection Types
 export interface BoundingBox {
   x: number;
   y: number;
   width: number;
   height: number;
+  ymin?: number;
+  xmin?: number;
+  ymax?: number;
+  xmax?: number;
 }
 
 export type UrgencyLevel = 'low' | 'medium' | 'high' | 'critical';
@@ -40,9 +21,31 @@ export type UrgencyLevel = 'low' | 'medium' | 'high' | 'critical';
 export interface DetectedObject {
   label: string;
   confidence: number;
+  classId?: number;
   boundingBox: BoundingBox;
-  distance?: number; // Estimated distance in meters
+  position?: SpatialPosition;
+  distance?: number; // Estimated distance in meters if available
   urgency?: UrgencyLevel;
+}
+
+export interface DetectionResult {
+  status: 'success' | 'error';
+  warning: string | null;
+  objects?: DetectedObject[];
+  inferenceTimeMs?: number;
+  model?: string;
+  errorMessage?: string;
+  timestamp: number;
+}
+
+export interface ModelInfo {
+  isLoaded: boolean;
+  modelName: string;
+  modelAsset: string;
+  inputShape: string;
+  inputDataType: string;
+  maxDetections: number;
+  totalClasses: number;
 }
 
 export type CameraStatus =

@@ -1,12 +1,12 @@
 /**
  * Vision-Link API Service
- * 
- * Handles network requests to the Vision-Link Backend.
- * Implements the finalized /api/detect contract for obstacle detection.
+ *
+ * Generic HTTP client helper for Vision-Link services.
+ * NOTE: Object detection is 100% offline via on-device TFLite (no /api/detect).
  */
 
 import { Config } from '../config/environment';
-import { ApiResponse, DetectImageRequest, DetectImageResponse } from '../types';
+import { ApiResponse } from '../types';
 
 export class ApiService {
   private baseUrl: string;
@@ -15,92 +15,12 @@ export class ApiService {
     this.baseUrl = baseUrl;
   }
 
-  /**
-   * Sets or updates the base URL for API requests.
-   */
   setBaseUrl(url: string): void {
     this.baseUrl = url;
   }
 
-  /**
-   * Gets the current configured base URL.
-   */
   getBaseUrl(): string {
     return this.baseUrl;
-  }
-
-  /**
-   * Dispatches a Base64 camera image to the obstacle detection endpoint.
-   * Endpoint: POST /api/detect
-   * Payload: { image: base64Image }
-   */
-  async detectImage(base64Image: string): Promise<DetectImageResponse> {
-    if (!base64Image) {
-      return {
-        status: 'error',
-        message: 'Invalid or missing image.',
-      };
-    }
-
-    const endpointUrl = `${this.baseUrl}/api/detect`;
-    const payload: DetectImageRequest = { image: base64Image };
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), Config.TIMEOUT_MS);
-
-      const response = await fetch(endpointUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        let serverMessage = `HTTP Error ${response.status}`;
-        try {
-          const errorData = await response.json();
-          if (errorData && typeof errorData.message === 'string') {
-            serverMessage = errorData.message;
-          }
-        } catch {
-          // Response was not valid JSON
-        }
-        return {
-          status: 'error',
-          message: serverMessage,
-        };
-      }
-
-      const jsonResponse: DetectImageResponse = await response.json();
-      if (!jsonResponse || typeof jsonResponse.status !== 'string') {
-        return {
-          status: 'error',
-          message: 'Unable to process image.',
-        };
-      }
-
-      return jsonResponse;
-    } catch (error: unknown) {
-      console.log('[apiService Error]', error);
-      const errorMessage =
-        error instanceof Error
-          ? error.name === 'AbortError'
-            ? 'Request timed out while connecting to server.'
-            : error.message
-          : 'Unable to process image.';
-
-      return {
-        status: 'error',
-        message: errorMessage,
-      };
-    }
   }
 
   /**

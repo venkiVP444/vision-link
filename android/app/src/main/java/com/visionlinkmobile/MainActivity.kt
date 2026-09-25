@@ -79,8 +79,8 @@ class MainActivity : ReactActivity(), TextToSpeech.OnInitListener {
                 Log.i(TAG, "==================================================")
               }
 
-              override fun onError(utteranceId: String, error: String) {
-                Log.e(TAG, "[ERROR] Speech Failed: $error")
+              override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
+                Log.e(TAG, "[ERROR] Speech Failed: [$stage] $errorCode - $message")
                 Log.i(TAG, "==================================================")
               }
             })
@@ -105,8 +105,8 @@ class MainActivity : ReactActivity(), TextToSpeech.OnInitListener {
                 Log.i(TAG, "==================================================")
               }
 
-              override fun onError(utteranceId: String, error: String) {
-                Log.e(TAG, "[ERROR] Speech Failed: $error")
+              override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
+                Log.e(TAG, "[ERROR] Speech Failed: [$stage] $errorCode - $message")
                 Log.i(TAG, "==================================================")
               }
             })

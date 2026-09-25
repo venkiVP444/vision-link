@@ -1,16 +1,24 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Switch } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Switch,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import {
   AccessibleButton,
   ScreenHeader,
   AccessibleCard,
-  StatusCard,
 } from '../components';
 import { Colors, Typography, Spacing } from '../theme';
 import { ttsService, TTS_LANGUAGE_OPTIONS } from '../features/tts/ttsService';
+import { VOICE_REGISTRY, VoicePackStatus } from '../features/tts/voiceRegistry';
 import { TTSLanguage, TTSLanguageOption } from '../types';
-import { TouchableOpacity } from 'react-native';
 
 export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -20,35 +28,128 @@ export const SettingsScreen: React.FC = () => {
   const [hapticFeedback, setHapticFeedback] = useState<boolean>(true);
 
   // Voice & TTS Settings
-  const [autoAnnounce, setAutoAnnounce] = useState<boolean>(true);
+  const [autoAnnounce, setAutoAnnounce] = useState<boolean>(
+    ttsService.getPreferences().autoAnnounceDetections !== false
+  );
   const [speechRateFast, setSpeechRateFast] = useState<boolean>(false);
   const [ttsLanguage, setTtsLanguage] = useState<TTSLanguage>(
     ttsService.getPreferences().language || 'en-GB'
   );
+  const [voiceStatuses, setVoiceStatuses] = useState<Record<string, VoicePackStatus>>({});
+  const [downloadingLang, setDownloadingLang] = useState<string | null>(null);
 
   // Detection Preferences
   const [strictThreshold, setStrictThreshold] = useState<boolean>(false);
   const [proximityAlerts, setProximityAlerts] = useState<boolean>(true);
 
-  // Hardware & Device
-  const [cameraAutoConnect, setCameraAutoConnect] = useState<boolean>(true);
+  // Refresh voice pack statuses
+  const refreshVoiceStatuses = useCallback(async () => {
+    const statuses: Record<string, VoicePackStatus> = {};
+    for (const opt of TTS_LANGUAGE_OPTIONS) {
+      statuses[opt.code] = await ttsService.getVoicePackStatus(opt.code);
+    }
+    setVoiceStatuses(statuses);
+  }, []);
+
+  useEffect(() => {
+    refreshVoiceStatuses();
+  }, [refreshVoiceStatuses]);
+
+  const handleDownloadVoicePack = async (lang: TTSLanguage, langName: string) => {
+    setDownloadingLang(lang);
+    try {
+      await ttsService.downloadVoicePack(lang);
+      await refreshVoiceStatuses();
+      Alert.alert(
+        'Voice Pack Ready',
+        `${langName} offline neural voice pack installed and SHA-256 verified successfully. It will now work completely offline.`,
+        [{ text: 'OK' }]
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Voice Pack Installation Failed',
+        `Failed to install ${langName} voice pack: ${err?.message || 'Checksum mismatch or network failure'}. The voice remains unavailable.`,
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setDownloadingLang(null);
+    }
+  };
+
+  const playLanguagePreview = async (lang: TTSLanguage) => {
+    try {
+      switch (lang) {
+        case 'ha-NG':
+          await ttsService.speak('Akwai mutum a gabanka, ka kula.', 'ha-NG');
+          break;
+        case 'ar':
+          await ttsService.speak('يوجد شخص أمامك. يرجى توخي الحذر.', 'ar');
+          break;
+        case 'hi-IN':
+          await ttsService.speak('सामने व्यक्ति है। कृपया सावधान रहें।', 'hi-IN');
+          break;
+        case 'en-GB':
+        case 'en-US':
+        default:
+          await ttsService.speak('Person ahead. Please be careful.', lang);
+          break;
+      }
+    } catch (error: any) {
+      console.warn('[SettingsScreen] Voice preview error:', error?.message || error);
+      Alert.alert(
+        'TTS Playback Error',
+        `Voice playback failed: ${error?.message || 'Offline neural model error'}.`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleSelectLanguage = async (option: TTSLanguageOption) => {
+    const meta = VOICE_REGISTRY[option.code];
+    const status = voiceStatuses[option.code];
+
+    if (!meta.isBundled && (!status || !status.isInstalled)) {
+      Alert.alert(
+        'Voice Pack Required',
+        `${option.name} is an optional voice pack.\n\nInternet connection required for initial installation.\n\nWould you like to install the voice pack (${meta.sizeMb}) now?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Download Voice Pack',
+            onPress: () => handleDownloadVoicePack(option.code, option.name),
+          },
+        ]
+      );
+      return;
+    }
+
+    setTtsLanguage(option.code);
+    ttsService.setPreferences({ language: option.code });
+
+    // Instantly play voice feedback in selected language (no need to click Test Voice)
+    await playLanguagePreview(option.code);
+  };
 
   const handleTestVoice = async () => {
-    switch (ttsLanguage) {
-      case 'ha-NG':
-        await ttsService.speak('Akwai mutum a gabanka, ka kula.');
-        break;
-      case 'ar':
-        await ttsService.speak('يوجد شخص أمامك. يرجى توخي الحذر.');
-        break;
-      case 'hi-IN':
-        await ttsService.speak('सामने व्यक्ति है। कृपया सावधान रहें।');
-        break;
-      case 'en-GB':
-      default:
-        await ttsService.speak('Person ahead. Please be careful.');
-        break;
+    const meta = VOICE_REGISTRY[ttsLanguage];
+    const status = voiceStatuses[ttsLanguage];
+
+    if (!meta.isBundled && (!status || !status.isInstalled)) {
+      Alert.alert(
+        'Voice Pack Required',
+        `Internet connection required for initial installation of ${meta.name} voice pack. Please download the voice pack to enable offline synthesis.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Download Now',
+            onPress: () => handleDownloadVoicePack(ttsLanguage, meta.name),
+          },
+        ]
+      );
+      return;
     }
+
+    await playLanguagePreview(ttsLanguage);
   };
 
   const handleToggleSpeechRate = () => {
@@ -60,26 +161,6 @@ export const SettingsScreen: React.FC = () => {
       ttsService.speak(`Gudun murya: ${nextFast ? 'Sauri' : 'Daidai'}.`);
     } else {
       ttsService.speak(`Speech rate set to ${nextFast ? '1.4x fast' : '1.0x standard'}.`);
-    }
-  };
-
-  const handleSelectLanguage = (option: TTSLanguageOption) => {
-    setTtsLanguage(option.code);
-    ttsService.setPreferences({ language: option.code });
-    switch (option.code) {
-      case 'ha-NG':
-        ttsService.speak('An sa harshe zuwa Hausa.');
-        break;
-      case 'ar':
-        ttsService.speak('يوجد شخص أمامك. يرجى توخي الحذر.');
-        break;
-      case 'hi-IN':
-        ttsService.speak('सामने व्यक्ति है। कृपया सावधान रहें।');
-        break;
-      case 'en-GB':
-      default:
-        ttsService.speak('Speech language set to English UK.');
-        break;
     }
   };
 
@@ -142,7 +223,7 @@ export const SettingsScreen: React.FC = () => {
 
       {/* Spoken Voice / TTS Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Spoken Guidance & Audio</Text>
+        <Text style={styles.sectionHeader}>Spoken Guidance & Offline Voices</Text>
 
         <View
           accessibilityRole="radiogroup"
@@ -151,43 +232,96 @@ export const SettingsScreen: React.FC = () => {
         >
           {TTS_LANGUAGE_OPTIONS.map((opt) => {
             const isSelected = ttsLanguage === opt.code;
-            const talkBackLabel = `${opt.name}, ${opt.voiceName}, ${isSelected ? 'selected' : 'not selected'}`;
+            const meta = VOICE_REGISTRY[opt.code];
+            const status = voiceStatuses[opt.code];
+            const isInstalled = meta?.isBundled || status?.isInstalled;
+            const isDownloading = downloadingLang === opt.code;
+
+            const badgeText = isInstalled
+              ? 'OFFLINE NEURAL ✓ Ready'
+              : isDownloading
+              ? 'Installing & Verifying (SHA-256)...'
+              : 'Voice Pack Required';
+
             const displayTitle = `${opt.name} — ${opt.voiceName}`;
 
             return (
-              <TouchableOpacity
+              <View
                 key={opt.code}
-                accessible={true}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={talkBackLabel}
-                accessibilityHint={`Double tap to select ${opt.name} ${opt.voiceName} for spoken navigation feedback`}
                 style={[
                   styles.languageOptionCard,
                   isSelected && styles.languageOptionCardSelected,
                 ]}
-                onPress={() => handleSelectLanguage(opt)}
-                activeOpacity={0.7}
               >
-                <View style={styles.radioRow}>
-                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                    {isSelected && <View style={styles.radioInner} />}
-                  </View>
-                  <View style={styles.languageTextContainer}>
-                    <Text style={[styles.languageTitle, isSelected && styles.languageTitleSelected]}>
-                      {displayTitle}
-                    </Text>
-                    <View style={styles.badgeRow}>
-                      <Text style={styles.languageSubtitle}>{opt.nativeName}</Text>
-                      {opt.isOfflineNeural && (
-                        <View style={styles.neuralBadge}>
-                          <Text style={styles.neuralBadgeText}>OFFLINE NEURAL</Text>
+                <TouchableOpacity
+                  accessible={true}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isSelected }}
+                  accessibilityLabel={`${opt.name}, ${badgeText}, ${isSelected ? 'selected' : 'not selected'}`}
+                  accessibilityHint={`Double tap to select ${opt.name} and preview voice speech immediately`}
+                  onPress={() => handleSelectLanguage(opt)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.radioRow}>
+                    <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                      {isSelected && <View style={styles.radioInner} />}
+                    </View>
+                    <View style={styles.languageTextContainer}>
+                      <Text style={[styles.languageTitle, isSelected && styles.languageTitleSelected]}>
+                        {displayTitle}
+                      </Text>
+                      <View style={styles.badgeRow}>
+                        <Text style={styles.languageSubtitle}>{opt.nativeName}</Text>
+                        <View
+                          style={[
+                            styles.neuralBadge,
+                            !isInstalled && styles.voicePackRequiredBadge,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.neuralBadgeText,
+                              !isInstalled && styles.voicePackRequiredBadgeText,
+                            ]}
+                          >
+                            {badgeText}
+                          </Text>
                         </View>
+                      </View>
+                      {!isInstalled && (
+                        <Text style={styles.noticeText}>
+                          Internet connection required for initial installation.
+                        </Text>
                       )}
                     </View>
                   </View>
-                </View>
-              </TouchableOpacity>
+                </TouchableOpacity>
+
+                {/* Download Voice Pack Action if uninstalled */}
+                {!isInstalled && (
+                  <View style={styles.downloadContainer}>
+                    {isDownloading ? (
+                      <View style={styles.downloadingRow}>
+                        <ActivityIndicator size="small" color={Colors.primary} />
+                        <Text style={styles.downloadingText}>
+                          Downloading & verifying SHA-256...
+                        </Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.downloadButton}
+                        onPress={() => handleDownloadVoicePack(opt.code, opt.name)}
+                        accessible={true}
+                        accessibilityLabel={`Download ${opt.name} Voice Pack, ${meta?.sizeMb || '60.6 MB'}`}
+                      >
+                        <Text style={styles.downloadButtonText}>
+                          Download Voice Pack ({meta?.sizeMb || '60.6 MB'})
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+              </View>
             );
           })}
         </View>
@@ -282,41 +416,6 @@ export const SettingsScreen: React.FC = () => {
           </View>
         </AccessibleCard>
       </View>
-
-      {/* Hardware Preferences */}
-      <View style={styles.section}>
-        <Text style={styles.sectionHeader}>External Camera & Devices</Text>
-
-        <AccessibleCard
-          variant="outlined"
-          style={styles.settingCard}
-          accessibilityLabel={`USB Auto-connect is ${cameraAutoConnect ? 'enabled' : 'disabled'}`}
-        >
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>USB OTG Auto-Connect</Text>
-              <Text style={styles.settingSubtitle}>
-                Automatically initialize camera session when UVC device is plugged in
-              </Text>
-            </View>
-            <Switch
-              value={cameraAutoConnect}
-              onValueChange={setCameraAutoConnect}
-              thumbColor={cameraAutoConnect ? Colors.primary : Colors.outline}
-              trackColor={{ false: Colors.outlineVariant, true: Colors.primaryContainer }}
-              accessibilityLabel="Toggle USB OTG Auto-Connect"
-            />
-          </View>
-        </AccessibleCard>
-
-        <StatusCard
-          label="Bluetooth Smart-Glasses / Audio"
-          value="Routing Standby"
-          badgeText="Supported"
-          statusType="info"
-          description="Ready to route spoken instructions directly to smart-glasses audio earpiece"
-        />
-      </View>
     </ScrollView>
   );
 };
@@ -356,10 +455,6 @@ const styles = StyleSheet.create({
     ...Typography.bodyMedium,
     color: Colors.onSurfaceVariant,
     marginTop: Spacing.xs,
-  },
-  langButton: {
-    marginVertical: 0,
-    minWidth: 120,
   },
   languageRadioGroup: {
     marginBottom: Spacing.sm,
@@ -417,13 +512,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 2,
     gap: Spacing.xs,
+    flexWrap: 'wrap',
   },
   languageSubtitle: {
     ...Typography.bodyMedium,
     color: Colors.onSurfaceVariant,
   },
   neuralBadge: {
-    backgroundColor: Colors.secondaryContainer,
+    backgroundColor: '#E8F5E9',
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 1,
@@ -431,8 +527,50 @@ const styles = StyleSheet.create({
   neuralBadgeText: {
     fontSize: 10,
     fontWeight: '800',
-    color: Colors.onSecondaryContainer,
+    color: '#2E7D32',
     letterSpacing: 0.5,
+  },
+  voicePackRequiredBadge: {
+    backgroundColor: '#FFF3E0',
+  },
+  voicePackRequiredBadgeText: {
+    color: '#E65100',
+  },
+  noticeText: {
+    fontSize: 11,
+    color: '#E65100',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  downloadContainer: {
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: Colors.outlineVariant,
+  },
+  downloadButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    alignItems: 'center',
+  },
+  downloadButtonText: {
+    color: Colors.onPrimary,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  downloadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  downloadingText: {
+    fontSize: 12,
+    color: Colors.primary,
+    fontWeight: '600',
   },
 });
 

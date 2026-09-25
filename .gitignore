@@ -94,3 +94,4 @@ build_video_from_app_screens.py
 offline-tts-research/models/
 android/.gradle/
 android/local.properties
+*.onnx

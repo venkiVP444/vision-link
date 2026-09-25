@@ -15,6 +15,8 @@ class MainApplication : Application(), ReactApplication {
       packageList =
         PackageList(this).packages.apply {
           add(TTSPackage())
+          add(TFLitePackage())
+          add(UsbCameraPackage())
         },
     )
   }

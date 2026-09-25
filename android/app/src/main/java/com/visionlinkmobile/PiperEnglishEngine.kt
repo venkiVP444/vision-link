@@ -4,11 +4,6 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
-import android.os.Build
 import android.util.Log
 import org.json.JSONObject
 import java.io.File
@@ -19,8 +14,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 
@@ -58,7 +51,7 @@ class PiperEnglishEngine private constructor(private val context: Context) {
     private var ortSession: OrtSession? = null
     private val phonemeIdMap = HashMap<String, Long>()
     private val wordTokenMap = HashMap<String, List<Long>>()
-    private var currentAudioTrack: AudioTrack? = null
+    private val audioTrackPlayer = AudioTrackPlayer(context)
     private val isInitialized = AtomicBoolean(false)
     private val isSpeaking = AtomicBoolean(false)
     private val isStopping = AtomicBoolean(false)
@@ -67,7 +60,7 @@ class PiperEnglishEngine private constructor(private val context: Context) {
     interface Callback {
         fun onStart(utteranceId: String)
         fun onDone(utteranceId: String)
-        fun onError(utteranceId: String, error: String)
+        fun onError(utteranceId: String, stage: String, errorCode: String, message: String)
     }
 
     @Synchronized
@@ -116,7 +109,7 @@ class PiperEnglishEngine private constructor(private val context: Context) {
             isInitialized.set(true)
 
             val elapsed = System.currentTimeMillis() - startTime
-            Log.d(TAG, "Piper English Engine initialized successfully in ${elapsed}ms. Model: ${modelFile.absolutePath}")
+            Log.i(TAG, "ONNX_INIT: SUCCESS. Piper English Engine initialized in ${elapsed}ms. Model: ${modelFile.absolutePath}")
             return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize Piper English Engine: ${e.message}", e)
@@ -159,13 +152,17 @@ class PiperEnglishEngine private constructor(private val context: Context) {
     }
 
     private fun copyAssetIfNeeded(assetPath: String, targetFile: File) {
-        if (targetFile.exists() && targetFile.length() > 1024 * 1024) {
+        if (targetFile.exists() && ModelVerifier.verifyChecksum(targetFile, ModelVerifier.SHA256_ENGLISH)) {
+            Log.d(TAG, "MODEL_VERIFY: SUCCESS. Existing English model verified with SHA-256: ${targetFile.absolutePath}")
             return
         }
 
-        Log.d(TAG, "Copying asset $assetPath to ${targetFile.absolutePath}...")
+        Log.d(TAG, "Extracting asset $assetPath to ${targetFile.absolutePath}...")
         val inputStream: InputStream = context.assets.open(assetPath)
         val tempFile = File(targetFile.parentFile, targetFile.name + ".tmp")
+        if (tempFile.exists()) {
+            tempFile.delete()
+        }
         val outputStream = FileOutputStream(tempFile)
 
         val buffer = ByteArray(64 * 1024)
@@ -177,11 +174,22 @@ class PiperEnglishEngine private constructor(private val context: Context) {
         outputStream.close()
         inputStream.close()
 
+        // Verify complete 64-character SHA-256 checksum on extracted file
+        if (!ModelVerifier.verifyChecksum(tempFile, ModelVerifier.SHA256_ENGLISH)) {
+            tempFile.delete()
+            throw IllegalStateException(
+                "English Piper model SHA-256 checksum mismatch! Expected: ${ModelVerifier.SHA256_ENGLISH}"
+            )
+        }
+
         if (targetFile.exists()) {
             targetFile.delete()
         }
-        tempFile.renameTo(targetFile)
-        Log.d(TAG, "English asset copied successfully (${targetFile.length() / (1024 * 1024)} MB)")
+        val moved = tempFile.renameTo(targetFile)
+        if (!moved) {
+            throw IllegalStateException("Failed to atomically move temporary model to ${targetFile.absolutePath}")
+        }
+        Log.i(TAG, "MODEL_VERIFY: SUCCESS. English model extracted and SHA-256 verified (${targetFile.length() / (1024 * 1024)} MB)")
     }
 
     fun isReady(): Boolean = isInitialized.get()
@@ -249,7 +257,7 @@ class PiperEnglishEngine private constructor(private val context: Context) {
             if (!isInitialized.get()) {
                 val ok = initialize()
                 if (!ok) {
-                    callback?.onError(utteranceId, "Piper English engine initialization failed")
+                    callback?.onError(utteranceId, "ONNX_INIT", "INIT_FAILED", "Piper English engine initialization failed")
                     return@execute
                 }
             }
@@ -257,12 +265,12 @@ class PiperEnglishEngine private constructor(private val context: Context) {
             val session = ortSession
             val env = ortEnv
             if (session == null || env == null) {
-                callback?.onError(utteranceId, "ONNX Runtime session is null")
+                callback?.onError(utteranceId, "ONNX_INIT", "SESSION_NULL", "ONNX Runtime session is null")
                 return@execute
             }
 
             isStopping.set(false)
-            stopAudio()
+            audioTrackPlayer.stop()
 
             try {
                 isSpeaking.set(true)
@@ -290,7 +298,7 @@ class PiperEnglishEngine private constructor(private val context: Context) {
                 val startTime = System.currentTimeMillis()
                 val result = session.run(inputs)
                 val elapsedInference = System.currentTimeMillis() - startTime
-                Log.d(TAG, "Jenny Dioco inference completed in ${elapsedInference}ms for utterance: $utteranceId")
+                Log.d(TAG, "INFERENCE: SUCCESS. Completed in ${elapsedInference}ms for utterance: $utteranceId")
 
                 inputTensor.close()
                 inputLengthsTensor.close()
@@ -303,10 +311,11 @@ class PiperEnglishEngine private constructor(private val context: Context) {
                     return@execute
                 }
 
-                val rawOut = result.get(0).value as Array<*>
-                val level1 = rawOut[0] as Array<*>
-                val level2 = level1[0] as Array<*>
-                val audioFloats = level2[0] as FloatArray
+                // Safe tensor float extraction using floatBuffer
+                val outTensor = result.get(0) as OnnxTensor
+                val floatBuffer = outTensor.floatBuffer
+                val audioFloats = FloatArray(floatBuffer.remaining())
+                floatBuffer.get(audioFloats)
                 result.close()
 
                 if (audioFloats.isEmpty()) {
@@ -330,12 +339,29 @@ class PiperEnglishEngine private constructor(private val context: Context) {
                     pcm16[i] = s.toShort()
                 }
 
-                playPcm(pcm16, utteranceId, callback)
+                Log.d(TAG, "PCM_BYTES: ${pcm16.size * 2} (${pcm16.size} samples @ $SAMPLE_RATE Hz)")
+
+                // Play PCM audio via shared AudioTrackPlayer (STREAM_MUSIC / USAGE_MEDIA)
+                audioTrackPlayer.playPcm(pcm16, SAMPLE_RATE, utteranceId, object : AudioTrackPlayer.PlaybackCallback {
+                    override fun onStart(utteranceId: String) {
+                        callback?.onStart(utteranceId)
+                    }
+
+                    override fun onDone(utteranceId: String) {
+                        isSpeaking.set(false)
+                        callback?.onDone(utteranceId)
+                    }
+
+                    override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
+                        isSpeaking.set(false)
+                        callback?.onError(utteranceId, stage, errorCode, message)
+                    }
+                })
 
             } catch (e: Exception) {
                 Log.e(TAG, "Jenny Dioco synthesis or playback failed: ${e.message}", e)
                 isSpeaking.set(false)
-                callback?.onError(utteranceId, e.message ?: "Synthesis failed")
+                callback?.onError(utteranceId, "SYNTHESIS", "SYNTHESIS_ERROR", e.message ?: "Synthesis failed")
             }
         }
     }
@@ -410,95 +436,11 @@ class PiperEnglishEngine private constructor(private val context: Context) {
         return output
     }
 
-    private fun playPcm(pcm16: ShortArray, utteranceId: String, callback: Callback?) {
-        try {
-            val minBufferSize = AudioTrack.getMinBufferSize(
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT
-            )
-
-            val bufferSize = max(minBufferSize, pcm16.size * 2)
-
-            val usage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                AudioAttributes.USAGE_ASSISTANT
-            } else {
-                AudioAttributes.USAGE_MEDIA
-            }
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(usage)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
-
-            val audioFormat = AudioFormat.Builder()
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                .build()
-
-            val track = AudioTrack(
-                audioAttributes,
-                audioFormat,
-                bufferSize,
-                AudioTrack.MODE_STREAM,
-                AudioManager.AUDIO_SESSION_ID_GENERATE
-            )
-
-            currentAudioTrack = track
-            track.play()
-            callback?.onStart(utteranceId)
-
-            val chunkSize = 2048
-            var offset = 0
-            while (offset < pcm16.size && !isStopping.get()) {
-                val toWrite = min(chunkSize, pcm16.size - offset)
-                track.write(pcm16, offset, toWrite)
-                offset += toWrite
-            }
-
-            if (!isStopping.get()) {
-                val playbackDurationMs = ((pcm16.size.toDouble() / SAMPLE_RATE) * 1000).toLong()
-                Thread.sleep(playbackDurationMs + 80)
-            }
-
-            track.stop()
-            track.release()
-            currentAudioTrack = null
-            isSpeaking.set(false)
-
-            if (!isStopping.get()) {
-                callback?.onDone(utteranceId)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "AudioTrack error: ${e.message}", e)
-            isSpeaking.set(false)
-            currentAudioTrack = null
-            callback?.onError(utteranceId, e.message ?: "AudioTrack playback error")
-        }
-    }
-
     fun stop() {
         isStopping.set(true)
-        stopAudio()
+        audioTrackPlayer.stop()
+        isSpeaking.set(false)
     }
 
-    private fun stopAudio() {
-        try {
-            currentAudioTrack?.let {
-                if (it.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                    it.pause()
-                    it.flush()
-                    it.stop()
-                }
-                it.release()
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error stopping AudioTrack: ${e.message}")
-        } finally {
-            currentAudioTrack = null
-            isSpeaking.set(false)
-        }
-    }
-
-    fun isSpeakingNow(): Boolean = isSpeaking.get()
+    fun isSpeakingNow(): Boolean = isSpeaking.get() || audioTrackPlayer.isPlaying()
 }

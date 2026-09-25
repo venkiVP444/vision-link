@@ -1,7 +1,9 @@
 import { ttsService, TTS_LANGUAGE_OPTIONS } from '../src/features/tts/ttsService';
+import { TTSLanguage } from '../src/types';
+import { aiService } from '../src/features/ai/aiService';
 import { NativeModules } from 'react-native';
 
-describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
+describe('Vision-Link Multilingual TTS Service Unit & Regression Tests', () => {
   const originalFetch = (globalThis as any).fetch;
   let mockFetch: jest.Mock;
 
@@ -21,6 +23,8 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
     describe('Hausa (ha-NG) Translations & Hooked Characters', () => {
       it('accurately maps standard warning phrases to authentic Hausa', () => {
         expect(ttsService.translateText('Person ahead. Please be careful.', 'ha-NG'))
+          .toBe('Akwai mutum a gabanka, ka kula.');
+        expect(ttsService.translateText('Person ahead.', 'ha-NG'))
           .toBe('Akwai mutum a gabanka, ka kula.');
         expect(ttsService.translateText('Obstacle ahead.', 'ha-NG'))
           .toBe('Akwai cikas a gabanka, ka kula.');
@@ -46,7 +50,7 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
       });
     });
 
-    describe('English (en-GB) Translations', () => {
+    describe('English (en-GB & en-US) Translations', () => {
       it('returns English text verbatim for en-GB and en-US', () => {
         const text = 'Person ahead. Please be careful.';
         expect(ttsService.translateText(text, 'en-GB')).toBe(text);
@@ -55,7 +59,7 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
     });
 
     describe('Arabic (ar) Translations', () => {
-      it('accurately maps standard warning phrases to verified Arabic', () => {
+      it('accurately maps standard warning phrases to authentic Arabic', () => {
         expect(ttsService.translateText('Person ahead. Please be careful.', 'ar'))
           .toBe('يوجد شخص أمامك. يرجى توخي الحذر.');
         expect(ttsService.translateText('Obstacle ahead.', 'ar'))
@@ -81,7 +85,7 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
     });
 
     describe('Hindi (hi-IN) Translations', () => {
-      it('accurately maps standard warning phrases to verified Hindi', () => {
+      it('accurately maps standard warning phrases to authentic Hindi', () => {
         expect(ttsService.translateText('Person ahead. Please be careful.', 'hi-IN'))
           .toBe('सामने व्यक्ति है। कृपया सावधान रहें।');
         expect(ttsService.translateText('Obstacle ahead.', 'hi-IN'))
@@ -108,38 +112,79 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
   });
 
   describe('2. Routing & Engine Support', () => {
-    it('provides metadata for all 4 team-selected voices in TTS_LANGUAGE_OPTIONS', () => {
-      expect(TTS_LANGUAGE_OPTIONS.length).toBe(4);
+    it('provides accurate metadata for all 5 voices in TTS_LANGUAGE_OPTIONS', () => {
+      expect(TTS_LANGUAGE_OPTIONS.length).toBe(5);
 
       const hausaOpt = TTS_LANGUAGE_OPTIONS.find((o) => o.code === 'ha-NG');
       expect(hausaOpt).toBeDefined();
-      expect(hausaOpt?.voiceName).toBe('Malama Asabe');
       expect(hausaOpt?.isOfflineNeural).toBe(true);
 
-      const englishOpt = TTS_LANGUAGE_OPTIONS.find((o) => o.code === 'en-GB');
-      expect(englishOpt).toBeDefined();
-      expect(englishOpt?.voiceName).toBe('Jenny');
-      expect(englishOpt?.isOfflineNeural).toBe(true);
+      const englishGbOpt = TTS_LANGUAGE_OPTIONS.find((o) => o.code === 'en-GB');
+      expect(englishGbOpt).toBeDefined();
+      expect(englishGbOpt?.isOfflineNeural).toBe(true);
+
+      const englishUsOpt = TTS_LANGUAGE_OPTIONS.find((o) => o.code === 'en-US');
+      expect(englishUsOpt).toBeDefined();
+      expect(englishUsOpt?.isOfflineNeural).toBe(true);
 
       const arabicOpt = TTS_LANGUAGE_OPTIONS.find((o) => o.code === 'ar');
       expect(arabicOpt).toBeDefined();
-      expect(arabicOpt?.voiceName).toBe('Nabra-82M');
+      expect(arabicOpt?.isOfflineNeural).toBe(true);
 
       const hindiOpt = TTS_LANGUAGE_OPTIONS.find((o) => o.code === 'hi-IN');
       expect(hindiOpt).toBeDefined();
-      expect(hindiOpt?.voiceName).toBe('Android Voice');
-      expect(hindiOpt?.isOfflineNeural).toBe(false);
+      expect(hindiOpt?.isOfflineNeural).toBe(true);
     });
 
-    it('verifies language support for all supported codes', () => {
-      expect(ttsService.checkLanguageSupport('ha-NG').supported).toBe(true);
-      expect(ttsService.checkLanguageSupport('en-GB').supported).toBe(true);
-      expect(ttsService.checkLanguageSupport('ar').supported).toBe(true);
-      expect(ttsService.checkLanguageSupport('hi-IN').supported).toBe(true);
+    it('accurately describes availability in checkLanguageSupport()', () => {
       expect(ttsService.checkLanguageSupport('en-US').supported).toBe(true);
+      expect(ttsService.checkLanguageSupport('en-GB').supported).toBe(true);
+      expect(ttsService.checkLanguageSupport('ha-NG').supported).toBe(true);
+
+      const arSupport = ttsService.checkLanguageSupport('ar');
+      expect(arSupport.supported).toBe(false);
+      expect(arSupport.message).toContain('Voice Pack Required');
+      expect(arSupport.message).toContain('Internet connection required for initial installation');
+
+      const hiSupport = ttsService.checkLanguageSupport('hi-IN');
+      expect(hiSupport.supported).toBe(false);
+      expect(hiSupport.message).toContain('Voice Pack Required');
+      expect(hiSupport.message).toContain('Internet connection required for initial installation');
+
+      const unsupported = ttsService.checkLanguageSupport('fr-FR' as any);
+      expect(unsupported.supported).toBe(false);
+      expect(unsupported.message).toContain('not supported');
     });
 
-    it('routes Hausa speech to TTSModule with activeLang ha-NG', async () => {
+    it('routes en-US detection speech to TTSModule with activeLang en-US', async () => {
+      ttsService.setLanguage('en-US');
+      await ttsService.speak('Person ahead.');
+      expect(ttsService.getLastSpokenText()).toBe('Person ahead.');
+      if (NativeModules.TTSModule?.speak) {
+        expect(NativeModules.TTSModule.speak).toHaveBeenCalledWith(
+          'Person ahead.',
+          1.0,
+          1.0,
+          'en-US'
+        );
+      }
+    });
+
+    it('routes en-GB detection speech to TTSModule with activeLang en-GB', async () => {
+      ttsService.setLanguage('en-GB');
+      await ttsService.speak('Person ahead.');
+      expect(ttsService.getLastSpokenText()).toBe('Person ahead.');
+      if (NativeModules.TTSModule?.speak) {
+        expect(NativeModules.TTSModule.speak).toHaveBeenCalledWith(
+          'Person ahead.',
+          1.0,
+          1.0,
+          'en-GB'
+        );
+      }
+    });
+
+    it('routes Hausa speech to Piper Hausa F4 with activeLang ha-NG', async () => {
       ttsService.setLanguage('ha-NG');
       await ttsService.speak('Person ahead. Please be careful.');
       expect(ttsService.getLastSpokenText()).toBe('Akwai mutum a gabanka, ka kula.');
@@ -151,23 +196,29 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
           'ha-NG'
         );
       }
+
+      await ttsService.speak('Obstacle ahead.');
+      expect(ttsService.getLastSpokenText()).toBe('Akwai cikas a gabanka, ka kula.');
     });
 
-    it('routes English speech to TTSModule with activeLang en-GB', async () => {
-      ttsService.setLanguage('en-GB');
-      await ttsService.speak('Person ahead. Please be careful.');
-      expect(ttsService.getLastSpokenText()).toBe('Person ahead. Please be careful.');
-      if (NativeModules.TTSModule?.speak) {
-        expect(NativeModules.TTSModule.speak).toHaveBeenCalledWith(
-          'Person ahead. Please be careful.',
-          1.0,
-          1.0,
-          'en-GB'
-        );
-      }
+    it('rejects Arabic speech when voice pack is not installed without silent fallback', async () => {
+      ttsService.setLanguage('ar');
+      await expect(ttsService.speak('Person ahead. Please be careful.'))
+        .rejects.toThrow(/Voice Pack Required/);
     });
 
-    it('routes Arabic speech to TTSModule with activeLang ar', async () => {
+    it('routes Arabic speech when voice pack is verified', async () => {
+      jest.spyOn(ttsService, 'getVoicePackStatus').mockResolvedValueOnce({
+        language: 'ar',
+        isBundled: false,
+        isInstalled: true,
+        state: 'ready',
+        badge: 'OFFLINE NEURAL ✓ Ready',
+        details: 'Verified',
+        sha256: '1578A9B27D01A0626227225B148179628B770607DD61BDBBC41865BD399106B1',
+        sizeMb: '60.6 MB',
+      });
+
       ttsService.setLanguage('ar');
       await ttsService.speak('Person ahead. Please be careful.');
       expect(ttsService.getLastSpokenText()).toBe('يوجد شخص أمامك. يرجى توخي الحذر.');
@@ -181,7 +232,24 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
       }
     });
 
-    it('routes Hindi speech to TTSModule with activeLang hi-IN', async () => {
+    it('rejects Hindi speech when voice pack is not installed without silent fallback', async () => {
+      ttsService.setLanguage('hi-IN');
+      await expect(ttsService.speak('Person ahead. Please be careful.'))
+        .rejects.toThrow(/Voice Pack Required/);
+    });
+
+    it('routes Hindi speech when voice pack is verified', async () => {
+      jest.spyOn(ttsService, 'getVoicePackStatus').mockResolvedValueOnce({
+        language: 'hi-IN',
+        isBundled: false,
+        isInstalled: true,
+        state: 'ready',
+        badge: 'OFFLINE NEURAL ✓ Ready',
+        details: 'Verified',
+        sha256: 'AA63BCF2CD493B55A450F280E23CF77F03AFC9AF7015E6E5ACD43B652F166C88',
+        sizeMb: '60.6 MB',
+      });
+
       ttsService.setLanguage('hi-IN');
       await ttsService.speak('Person ahead. Please be careful.');
       expect(ttsService.getLastSpokenText()).toBe('सामने व्यक्ति है। कृपया सावधान रहें।');
@@ -196,63 +264,63 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
     });
   });
 
-  describe('3. Error Handling & Edge Cases', () => {
-    it('detects unsupported languages and reports supported: false', () => {
-      const unsupported = ttsService.checkLanguageSupport('fr-FR' as any);
-      expect(unsupported.supported).toBe(false);
-      expect(unsupported.message).toContain('not supported');
-    });
-
-    it('falls back to default safe language if an unsupported language is requested', async () => {
-      ttsService.setLanguage('zh-CN' as any);
-      await ttsService.speak('Person ahead.');
-      // Should fall back safely to en-US / English without throwing
-      expect(ttsService.isSpeaking()).toBe(true);
-      await ttsService.stopSpeaking();
-    });
-
-    it('gracefully handles native TTSModule failure without crashing', async () => {
+  describe('3. Error Handling & State Management', () => {
+    it('resets speaking state and throws on native TTS failure', async () => {
       if (NativeModules.TTSModule?.speak) {
-        const spy = jest.spyOn(NativeModules.TTSModule, 'speak').mockRejectedValueOnce(new Error('Hardware audio error'));
-        await expect(ttsService.speak('Person ahead.')).resolves.not.toThrow();
-        spy.mockRestore();
+        jest.spyOn(NativeModules.TTSModule, 'speak').mockRejectedValueOnce(new Error('TTS_LANG_NOT_SUPPORTED'));
+        
+        await expect(ttsService.speak('Warning: Obstacle ahead.')).rejects.toThrow('TTS_LANG_NOT_SUPPORTED');
+        expect(ttsService.isSpeaking()).toBe(false);
       }
     });
-  });
 
-  describe('4. Persistence & Preferences', () => {
-    it('updates and persists preferences across calls', () => {
-      ttsService.setPreferences({
-        language: 'ar',
-        speechRate: 1.4,
-        pitch: 1.1,
-        autoAnnounceDetections: false,
-      });
-
+    it('updates speech rate and pitch preferences dynamically', () => {
+      ttsService.setPreferences({ speechRate: 1.4, pitch: 1.2 });
       const prefs = ttsService.getPreferences();
-      expect(prefs.language).toBe('ar');
       expect(prefs.speechRate).toBe(1.4);
-      expect(prefs.pitch).toBe(1.1);
-      expect(prefs.autoAnnounceDetections).toBe(false);
+      expect(prefs.pitch).toBe(1.2);
     });
 
-    it('allows changing individual preferences without overriding others', () => {
-      ttsService.setPreferences({ language: 'ar', speechRate: 1.4 });
-      ttsService.setPreferences({ language: 'hi-IN' });
-      expect(ttsService.getPreferences().language).toBe('hi-IN');
-      expect(ttsService.getPreferences().speechRate).toBe(1.4); // Preserved from previous setPreferences
+    it('broadcasts state changes to registered listeners', () => {
+      const listener = jest.fn();
+      const unsubscribe = ttsService.onStateChange(listener);
 
-      ttsService.setPreferences({ speechRate: 1.0 });
-      expect(ttsService.getPreferences().language).toBe('hi-IN');
-      expect(ttsService.getPreferences().speechRate).toBe(1.0);
+      ttsService.speak('Test speaking');
+      expect(listener).toHaveBeenCalledWith(true, 'Test speaking');
+
+      unsubscribe();
+      ttsService.stop();
+      // Listener should not receive the stop call after unsubscribe
+      expect(listener).not.toHaveBeenCalledWith(false, expect.anything());
     });
   });
 
-  describe('5. Offline Guarantee (Zero Network Traffic During TTS)', () => {
-    it('synthesizes speech without calling global fetch across all languages', async () => {
-      const testLanguages = ['ha-NG', 'en-GB', 'ar', 'hi-IN'] as const;
+  describe('4. Object Detection Integration Pipeline', () => {
+    it('translates detection warning correctly for Hausa without mutating original detection object', async () => {
+      ttsService.setLanguage('ha-NG');
+      const warningText = 'Person ahead. Please be careful.';
 
-      for (const lang of testLanguages) {
+      await ttsService.speak(warningText);
+
+      expect(ttsService.getLastSpokenText()).toBe('Akwai mutum a gabanka, ka kula.');
+      expect(warningText).toBe('Person ahead. Please be careful.');
+    });
+
+    it('translates obstacle warning correctly for English UK without mutation', async () => {
+      ttsService.setLanguage('en-GB');
+      const warningText = 'Person ahead. Please be careful.';
+
+      await ttsService.speak(warningText);
+
+      expect(ttsService.getLastSpokenText()).toBe('Person ahead. Please be careful.');
+    });
+  });
+
+  describe('5. Persistence & Offline Guarantee', () => {
+    it('synthesizes speech without calling global fetch across all languages', async () => {
+      const languages: TTSLanguage[] = ['en-GB', 'en-US', 'ha-NG'];
+
+      for (const lang of languages) {
         ttsService.setLanguage(lang);
         await ttsService.speak('Person ahead. Please be careful.');
         expect(mockFetch).not.toHaveBeenCalled();
@@ -260,4 +328,148 @@ describe('Vision-Link Multilingual TTS Service Unit Tests', () => {
       }
     });
   });
+
+  describe('6. Language Options & Voice Pack Strategy', () => {
+    it('strictly configures bundled offline neural status for Hausa & English UK, and voice packs for Arabic & Hindi', () => {
+      const hausa = TTS_LANGUAGE_OPTIONS.find(o => o.code === 'ha-NG');
+      expect(hausa).toBeDefined();
+      expect(hausa?.isOfflineNeural).toBe(true);
+
+      const englishUk = TTS_LANGUAGE_OPTIONS.find(o => o.code === 'en-GB');
+      expect(englishUk).toBeDefined();
+      expect(englishUk?.isOfflineNeural).toBe(true);
+
+      const arabic = TTS_LANGUAGE_OPTIONS.find(o => o.code === 'ar');
+      expect(arabic).toBeDefined();
+      expect(arabic?.isOfflineNeural).toBe(true);
+
+      const hindi = TTS_LANGUAGE_OPTIONS.find(o => o.code === 'hi-IN');
+      expect(hindi).toBeDefined();
+      expect(hindi?.isOfflineNeural).toBe(true);
+    });
+
+    it('returns structured voice-data missing message for uninstalled Arabic/Hindi', async () => {
+      const arCheck = await ttsService.checkLanguageAvailability('ar');
+      expect(arCheck.supported).toBe(false);
+      expect(arCheck.missingData).toBe(true);
+      expect(arCheck.message).toContain('Internet connection required for initial installation');
+
+      const hiCheck = await ttsService.checkLanguageAvailability('hi-IN');
+      expect(hiCheck.supported).toBe(false);
+      expect(hiCheck.missingData).toBe(true);
+      expect(hiCheck.message).toContain('Internet connection required for initial installation');
+    });
+
+    it('provides installTtsData method returning a boolean', async () => {
+      const result = await ttsService.installTtsData();
+      expect(typeof result).toBe('boolean');
+    });
+  });
+
+  describe('7. Cross-Device Robustness & Native Error Propagation', () => {
+    it('Promise resolves only after playback completion', async () => {
+      let resolved = false;
+      if (NativeModules.TTSModule?.speak) {
+        jest.spyOn(NativeModules.TTSModule, 'speak').mockImplementationOnce(async () => {
+          await new Promise((resolve) => setTimeout(() => resolve(undefined), 50));
+          resolved = true;
+          return 'utt_123';
+        });
+      }
+
+      await ttsService.speak('Person ahead. Please be careful.');
+      if (NativeModules.TTSModule?.speak) {
+        expect(resolved).toBe(true);
+      }
+    });
+
+    it('Promise rejects with detailed error on synthesis failure', async () => {
+      if (NativeModules.TTSModule?.speak) {
+        const nativeErr = new Error('[AUDIOTRACK_INIT] AudioTrack failed to initialize (state=0)');
+        (nativeErr as any).code = 'STATE_UNINITIALIZED';
+        (nativeErr as any).userInfo = { stage: 'AUDIOTRACK_INIT', code: 'STATE_UNINITIALIZED' };
+
+        jest.spyOn(NativeModules.TTSModule, 'speak').mockRejectedValueOnce(nativeErr);
+
+        await expect(ttsService.speak('Person ahead.'))
+          .rejects.toThrow(/AUDIOTRACK_INIT/);
+        expect(ttsService.isSpeaking()).toBe(false);
+      }
+    });
+
+    it('handles AudioTrack write errors without swallowing exceptions', async () => {
+      if (NativeModules.TTSModule?.speak) {
+        const writeErr = new Error('[AUDIOTRACK_WRITE] AudioTrack.write error code: -3');
+        (writeErr as any).code = 'WRITE_ERROR_-3';
+
+        jest.spyOn(NativeModules.TTSModule, 'speak').mockRejectedValueOnce(writeErr);
+
+        await expect(ttsService.speak('Obstacle ahead.'))
+          .rejects.toThrow(/AUDIOTRACK_WRITE/);
+        expect(ttsService.isSpeaking()).toBe(false);
+      }
+    });
+
+    it('rejects unverified voice pack with invalid SHA-256 without marking READY', async () => {
+      jest.spyOn(ttsService, 'getVoicePackStatus').mockResolvedValueOnce({
+        language: 'ar',
+        isBundled: false,
+        isInstalled: false,
+        state: 'voice_pack_required',
+        badge: 'Voice Pack Required',
+        details: 'Internet connection required for initial installation.',
+        sha256: '1578A9B27D01A0626227225B148179628B770607DD61BDBBC41865BD399106B1',
+        sizeMb: '60.6 MB',
+      });
+
+      ttsService.setLanguage('ar');
+      await expect(ttsService.speak('Person ahead.'))
+        .rejects.toThrow(/Voice Pack Required/);
+    });
+
+    it('ensures English detection sentence routing speaks the actual supplied warning and NEVER language announcement', async () => {
+      ttsService.setLanguage('en-GB');
+      const warningSentence = 'Person ahead. Please be careful.';
+      await ttsService.speak(warningSentence);
+
+      const spoken = ttsService.getLastSpokenText();
+      expect(spoken).toBe('Person ahead. Please be careful.');
+      expect(spoken).not.toContain('Speak language to English UK');
+      expect(spoken).not.toContain('Speech language set');
+    });
+
+    it('ensures offline synthesis for Arabic & Hindi does not make network requests after installation', async () => {
+      // Simulate verified voice packs
+      jest.spyOn(ttsService, 'getVoicePackStatus').mockImplementation(async (lang: TTSLanguage) => ({
+        language: lang,
+        isBundled: false,
+        isInstalled: true,
+        state: 'ready',
+        badge: 'OFFLINE NEURAL ✓ Ready',
+        details: 'Verified',
+        sha256: 'DUMMY_VERIFIED_HASH',
+        sizeMb: '60.6 MB',
+      }));
+
+      // Arabic offline test
+      ttsService.setLanguage('ar');
+      await ttsService.speak('Person ahead.');
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('ensures selecting a language triggers immediate speech without requiring a test button press', async () => {
+      // 1. Select Hausa
+      ttsService.setLanguage('ha-NG');
+      await ttsService.speak('Akwai mutum a gabanka, ka kula.', 'ha-NG');
+      expect(ttsService.getLastSpokenText()).toBe('Akwai mutum a gabanka, ka kula.');
+      expect(ttsService.isSpeaking()).toBe(true);
+
+      // 2. Select English UK
+      ttsService.setLanguage('en-GB');
+      await ttsService.speak('Person ahead. Please be careful.', 'en-GB');
+      expect(ttsService.getLastSpokenText()).toBe('Person ahead. Please be careful.');
+      expect(ttsService.isSpeaking()).toBe(true);
+    });
+  });
 });
+

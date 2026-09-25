@@ -1,6 +1,7 @@
 /**
  * Vision-Link Environment Configuration
- * Centralized configuration placeholder. No secrets or production endpoints hardcoded.
+ * Centralized configuration. No secrets or cloud inference endpoints.
+ * Note: AI object detection and neural TTS operate 100% offline on-device.
  */
 
 export interface EnvironmentConfig {
@@ -10,10 +11,9 @@ export interface EnvironmentConfig {
 }
 
 export const Config: EnvironmentConfig = {
-  // Configured with live ngrok backend API
-  API_BASE_URL: 'https://art-earring-bright.ngrok-free.dev',
+  API_BASE_URL: 'http://localhost:8080',
   ENVIRONMENT: 'development',
-  TIMEOUT_MS: 30000,
+  TIMEOUT_MS: 15000,
 };
 
 export default Config;

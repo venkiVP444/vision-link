@@ -34,15 +34,16 @@ describe('Vision-Link Service Layer', () => {
   });
 
   describe('AIService & Mock Detections', () => {
-    it('returns realistic mock obstacle detections including Person, Chair, Door, Vehicle, Stairs', () => {
+    it('returns realistic mock obstacle detections including Person, Chair, Car, Bicycle, Motorcycle', () => {
       const objects = aiService.getMockDetections();
       expect(objects.length).toBeGreaterThanOrEqual(4);
 
       const labels = objects.map((o) => o.label);
       expect(labels).toContain('Person');
       expect(labels).toContain('Chair');
-      expect(labels).toContain('Door');
-      expect(labels).toContain('Stairs');
+      expect(labels).toContain('Car');
+      expect(labels).toContain('Bicycle');
+      expect(labels).toContain('Motorcycle');
 
       objects.forEach((obj) => {
         expect(obj.confidence).toBeGreaterThan(0.7);
@@ -53,91 +54,97 @@ describe('Vision-Link Service Layer', () => {
     });
   });
 
-  describe('Backend API Contract Integration (POST /api/detect)', () => {
-    const originalFetch = (globalThis as any).fetch;
-
-    beforeEach(() => {
-      jest.resetAllMocks();
-    });
-
-    afterAll(() => {
-      (globalThis as any).fetch = originalFetch;
-    });
-
-    it('verifies the request sends { image: "BASE64_IMAGE_STRING" } with application/json headers', async () => {
-      const mockFetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'success', warning: 'Person ahead.' }),
-      });
+  describe('100% Offline Edge-AI Object Detection Pipeline (TFLite)', () => {
+    it('performs local on-device inference without making any network requests', async () => {
+      const mockFetch = jest.fn();
       (globalThis as any).fetch = mockFetch;
 
-      const base64Input = 'BASE64_IMAGE_STRING';
-      await apiService.detectImage(base64Input);
+      const result = await aiService.detectObjectsFromFrame('BASE64_FRAME_STRING', 0.5);
 
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      const [url, options] = mockFetch.mock.calls[0];
-      expect(url).toBe(`${Config.API_BASE_URL}/api/detect`);
-      expect(options.method).toBe('POST');
-      expect(options.headers).toEqual({
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      });
-      expect(JSON.parse(options.body)).toEqual({
-        image: 'BASE64_IMAGE_STRING',
-      });
+      expect(result.status).toBe('success');
+      expect(result.warning).toBe('Person ahead. Be careful.');
+      expect(result.inferenceTimeMs).toBeGreaterThan(0);
+      expect(result.model).toContain('SSD MobileNet v1');
+      expect(result.objects?.length).toBeGreaterThan(0);
+
+      // Verify ZERO network calls were made
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('handles successful warning response: { status: "success", warning: "Person ahead." }', async () => {
-      (globalThis as any).fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'success', warning: 'Person ahead.' }),
-      });
-
-      const result = await aiService.detectObjectsFromFrame('BASE64_IMAGE_STRING');
-      expect(result.status).toBe('success');
-      expect(result.warning).toBe('Person ahead.');
-    });
-
-    it('handles successful no-warning response: { status: "success", warning: null }', async () => {
-      (globalThis as any).fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'success', warning: null }),
-      });
-
-      const result = await aiService.detectObjectsFromFrame('BASE64_IMAGE_STRING');
-      expect(result.status).toBe('success');
+    it('rejects invalid or missing frame cleanly without crashing', async () => {
+      const result = await aiService.detectObjectsFromFrame('');
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toBe('Invalid or missing camera frame.');
       expect(result.warning).toBeNull();
     });
 
-    it('handles invalid or missing image error response: { status: "error", message: "Invalid or missing image." }', async () => {
-      (globalThis as any).fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'error', message: 'Invalid or missing image.' }),
-      });
-
-      const result = await aiService.detectObjectsFromFrame('INVALID_BASE64');
-      expect(result.status).toBe('error');
-      expect(result.errorMessage).toBe('Invalid or missing image.');
+    it('provides offline model metadata contract', async () => {
+      const info = await aiService.getModelInfo();
+      expect(info).not.toBeNull();
+      expect(info?.modelName).toContain('SSD MobileNet v1');
+      expect(info?.inputShape).toBe('1x300x300x3');
+      expect(info?.inputDataType).toBe('UINT8');
+      expect(info?.maxDetections).toBe(10);
+      expect(info?.totalClasses).toBe(90);
     });
 
-    it('handles processing/inference error response: { status: "error", message: "Unable to process image." }', async () => {
-      (globalThis as any).fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ status: 'error', message: 'Unable to process image.' }),
-      });
+    it('dynamically processes live camera frames and announces exact allowed objects, rejecting non-allowlisted objects', async () => {
+      await cameraService.connectCamera();
+      const testCases: { frame: string; expectedLabel: string; expectedWarning: string; classId: number }[] = [
+        { frame: 'FRAME_PERSON_DATA', expectedLabel: 'Person', expectedWarning: 'Person ahead. Be careful.', classId: 0 },
+        { frame: 'FRAME_CAR_DATA', expectedLabel: 'Car', expectedWarning: 'Car ahead. Be careful.', classId: 2 },
+        { frame: 'FRAME_CHAIR_DATA', expectedLabel: 'Chair', expectedWarning: 'Chair ahead. Be careful.', classId: 61 },
+        { frame: 'FRAME_MOTORCYCLE_DATA', expectedLabel: 'Motorcycle', expectedWarning: 'Motorcycle ahead. Be careful.', classId: 3 },
+        { frame: 'FRAME_BICYCLE_DATA', expectedLabel: 'Bicycle', expectedWarning: 'Bicycle ahead. Be careful.', classId: 1 },
+        { frame: 'FRAME_BUS_DATA', expectedLabel: 'Bus', expectedWarning: 'Bus ahead. Be careful.', classId: 5 },
+        { frame: 'FRAME_DOG_DATA', expectedLabel: 'Dog', expectedWarning: 'Dog ahead. Be careful.', classId: 17 },
+        { frame: 'FRAME_TV_DATA', expectedLabel: 'TV', expectedWarning: 'TV ahead. Be careful.', classId: 71 },
+      ];
 
-      const result = await aiService.detectObjectsFromFrame('BASE64_CORRUPTED');
-      expect(result.status).toBe('error');
-      expect(result.errorMessage).toBe('Unable to process image.');
-    });
+      for (const tc of testCases) {
+        cameraService.setCustomFrame(tc.frame);
+        const frame = await cameraService.captureFrame();
+        expect(frame).not.toBeNull();
 
-    it('handles network or HTTP failures cleanly', async () => {
-      (globalThis as any).fetch = jest.fn().mockRejectedValue(new Error('Network request failed'));
+        const result = await aiService.detectObjectsFromFrame(frame!);
+        expect(result.status).toBe('success');
+        expect(result.warning).toBe(tc.expectedWarning);
+        expect(result.objects?.[0]?.label).toBe(tc.expectedLabel);
+        expect(result.objects?.[0]?.classId).toBe(tc.classId);
 
-      const result = await aiService.detectObjectsFromFrame('BASE64_IMAGE_STRING');
-      expect(result.status).toBe('error');
-      expect(result.errorMessage).toBe('Network request failed');
+        // Verify TTS translates the warning appropriately for each language
+        const enTTS = ttsService.translateDetectionWarning(result.warning!, 'en-GB');
+        expect(enTTS).toContain(tc.expectedLabel);
+
+        const haTTS = ttsService.translateDetectionWarning(result.warning!, 'ha-NG');
+        expect(haTTS).not.toBeNull();
+        expect(haTTS).toContain('Akwai');
+
+        const arTTS = ttsService.translateDetectionWarning(result.warning!, 'ar');
+        expect(arTTS).not.toBeNull();
+
+        const hiTTS = ttsService.translateDetectionWarning(result.warning!, 'hi-IN');
+        expect(hiTTS).not.toBeNull();
+        expect(hiTTS).toContain('सामने');
+      }
+
+      // Test clear path: no obstacle detected, stay silent
+      cameraService.setCustomFrame('FRAME_CLEAR_EMPTY');
+      const clearFrame = await cameraService.captureFrame();
+      const clearResult = await aiService.detectObjectsFromFrame(clearFrame!);
+      expect(clearResult.status).toBe('success');
+      expect(clearResult.warning).toBeNull();
+      expect(clearResult.objects?.length).toBe(0);
+
+      // Test non-allowlisted / unsupported object (e.g. cat, bottle): MUST be ignored, NO TTS
+      cameraService.setCustomFrame('FRAME_UNSUPPORTED_CAT');
+      const catFrame = await cameraService.captureFrame();
+      const catResult = await aiService.detectObjectsFromFrame(catFrame!);
+      expect(catResult.status).toBe('success');
+      expect(catResult.warning).toBeNull();
+      expect(catResult.objects?.length).toBe(0);
+
+      cameraService.setCustomFrame(null);
     });
   });
 

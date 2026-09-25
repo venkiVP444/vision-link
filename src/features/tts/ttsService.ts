@@ -1,17 +1,19 @@
 /**
  * Text-to-Speech (TTS) Service Abstraction
  * 
- * MVP Strategy:
- * Uses Android native TextToSpeech engine abstraction for spoken navigation
- * instructions, detected obstacles, and status updates without recurring cloud TTS fees.
+ * Multilingual Offline Neural Voice Architecture:
+ * - Hausa (ha-NG): Bundled Piper VITS ONNX model (Malama Asabe, 73.5 MB) -> 100% offline from first launch.
+ * - English UK (en-GB): Bundled Piper VITS ONNX model (Jenny Dioco, 60.3 MB) -> 100% offline from first launch.
+ * - Arabic (ar): Optional Voice Pack (Emirati Female, 60.6 MB) -> Downloaded on-demand, 100% offline once verified.
+ * - Hindi (hi-IN): Optional Voice Pack (Priyamvada, 60.6 MB) -> Downloaded on-demand, 100% offline once verified.
  *
- * Language Support:
- * - English (en-US) - Default primary spoken language
- * - Hausa (ha-NG)   - Supported for regional accessibility when device voice data is present
+ * Zero Silent Fallback:
+ * Never silently delegates to Android System TTS when an offline neural model is missing or fails checksum.
  */
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
-import { TTSLanguage, TTSPreferences } from '../../types';
+import { TTSLanguage, TTSPreferences, TTSLanguageOption } from '../../types';
+import { VOICE_REGISTRY, VoicePackStatus, VoiceMetadata } from './voiceRegistry';
 
 const { TTSModule } = NativeModules;
 
@@ -29,54 +31,131 @@ export interface ITTSService {
   setPreferences(prefs: Partial<TTSPreferences>): void;
   getPreferences(): TTSPreferences;
   checkLanguageSupport(lang: TTSLanguage): { supported: boolean; message: string };
+  checkLanguageAvailability(lang: TTSLanguage): Promise<{ supported: boolean; missingData: boolean; message: string; badge: string }>;
+  getVoicePackStatus(lang: TTSLanguage): Promise<VoicePackStatus>;
+  downloadVoicePack(lang: TTSLanguage): Promise<{ success: boolean; sha256: string }>;
+  deleteVoicePack(lang: TTSLanguage): Promise<boolean>;
+  installTtsData(): Promise<boolean>;
   translateText(text: string, lang: TTSLanguage): string;
+  translateDetectionWarning(warning: string, lang: TTSLanguage): string;
   onStateChange(listener: TTSStateListener): () => void;
   getEngineInfo(): Promise<{ piperEngineStatus?: string; piperSpeaker?: string; sampleRate?: number; isSpeaking?: boolean }>;
 }
 
-import { TTSLanguageOption } from '../../types';
-
 export const TTS_LANGUAGE_OPTIONS: TTSLanguageOption[] = [
+  {
+    code: 'en-GB',
+    name: 'English (UK)',
+    nativeName: 'English (UK)',
+    voiceName: 'Jenny Dioco (RP)',
+    isOfflineNeural: true,
+  },
   {
     code: 'ha-NG',
     name: 'Hausa',
     nativeName: 'Harshen Hausa',
-    voiceName: 'Malama Asabe',
-    isOfflineNeural: true,
-  },
-  {
-    code: 'en-GB',
-    name: 'English (UK)',
-    nativeName: 'English',
-    voiceName: 'Jenny',
+    voiceName: 'Malama Asabe (F4)',
     isOfflineNeural: true,
   },
   {
     code: 'ar',
     name: 'Arabic',
     nativeName: 'العربية',
-    voiceName: 'Nabra-82M',
-    isOfflineNeural: false,
+    voiceName: 'Emirati Female',
+    isOfflineNeural: true,
   },
   {
     code: 'hi-IN',
     name: 'Hindi',
     nativeName: 'हिन्दी',
-    voiceName: 'Android Voice',
-    isOfflineNeural: false,
+    voiceName: 'Priyamvada',
+    isOfflineNeural: true,
+  },
+  {
+    code: 'en-US',
+    name: 'English (US)',
+    nativeName: 'English (US)',
+    voiceName: 'Jenny Dioco (RP)',
+    isOfflineNeural: true,
   },
 ];
 
+const ENGLISH_WARNING_MAP: Record<string, string> = {
+  "Person ahead. Be careful.": "Person ahead. Be careful.",
+  "Person ahead. Please be careful.": "Person ahead. Please be careful.",
+  "Person ahead.": "Person ahead. Please be careful.",
+  "Person ahead": "Person ahead. Please be careful.",
+  "Car ahead. Be careful.": "Car ahead. Be careful.",
+  "Car ahead.": "Car ahead.",
+  "Car ahead": "Car ahead.",
+  "Chair ahead. Be careful.": "Chair ahead. Be careful.",
+  "Chair ahead.": "Chair ahead.",
+  "Chair ahead": "Chair ahead.",
+  "Motorcycle ahead. Be careful.": "Motorcycle ahead. Be careful.",
+  "Motorcycle ahead.": "Motorcycle ahead.",
+  "Motorcycle ahead": "Motorcycle ahead.",
+  "Bicycle ahead. Be careful.": "Bicycle ahead. Be careful.",
+  "Bicycle ahead.": "Bicycle ahead.",
+  "Bicycle ahead": "Bicycle ahead.",
+  "Bus ahead. Be careful.": "Bus ahead. Be careful.",
+  "Truck ahead. Be careful.": "Truck ahead. Be careful.",
+  "Table ahead. Be careful.": "Table ahead. Be careful.",
+  "Bench ahead. Be careful.": "Bench ahead. Be careful.",
+  "Dog ahead. Be careful.": "Dog ahead. Be careful.",
+  "Stop sign ahead. Be careful.": "Stop sign ahead. Be careful.",
+  "Fire hydrant ahead. Be careful.": "Fire hydrant ahead. Be careful.",
+  "Couch ahead. Be careful.": "Couch ahead. Be careful.",
+  "Bed ahead. Be careful.": "Bed ahead. Be careful.",
+  "Toilet ahead. Be careful.": "Toilet ahead. Be careful.",
+  "Potted plant ahead. Be careful.": "Potted plant ahead. Be careful.",
+  "Backpack ahead. Be careful.": "Backpack ahead. Be careful.",
+  "Umbrella ahead. Be careful.": "Umbrella ahead. Be careful.",
+  "Suitcase ahead. Be careful.": "Suitcase ahead. Be careful.",
+  "TV ahead. Be careful.": "TV ahead. Be careful.",
+  "Obstacle ahead.": "Obstacle ahead. Please proceed carefully.",
+  "Obstacle ahead": "Obstacle ahead. Please proceed carefully.",
+  "Warning: Person ahead.": "Warning: Person ahead.",
+  "Warning: Obstacle ahead.": "Warning: Obstacle ahead.",
+  "Obstacle warning: Person ahead.": "Warning: Person ahead.",
+  "Obstacle warning: Obstacle ahead.": "Warning: Obstacle ahead.",
+};
+
 const HAUSA_WARNING_MAP: Record<string, string> = {
+  "Person ahead. Be careful.": "Akwai mutum a gabanka, ka kula.",
   "Person ahead. Please be careful.": "Akwai mutum a gabanka, ka kula.",
   "Person ahead.": "Akwai mutum a gabanka, ka kula.",
   "Person ahead": "Akwai mutum a gabanka, ka kula.",
+  "Car ahead. Be careful.": "Akwai mota a gabanka, ka kula.",
+  "Car ahead.": "Akwai mota a gabanka, ka kula.",
+  "Car ahead": "Akwai mota a gabanka, ka kula.",
+  "Chair ahead. Be careful.": "Akwai kujera a gabanka, ka kula.",
+  "Chair ahead.": "Akwai kujera a gabanka, ka kula.",
+  "Chair ahead": "Akwai kujera a gabanka, ka kula.",
+  "Motorcycle ahead. Be careful.": "Akwai babur a gabanka, ka kula.",
+  "Motorcycle ahead.": "Akwai babur a gabanka, ka kula.",
+  "Motorcycle ahead": "Akwai babur a gabanka, ka kula.",
+  "Bicycle ahead. Be careful.": "Akwai keke a gabanka, ka kula.",
+  "Bicycle ahead.": "Akwai keke a gabanka, ka kula.",
+  "Bicycle ahead": "Akwai keke a gabanka, ka kula.",
+  "Bus ahead. Be careful.": "Akwai motar bas a gabanka, ka kula.",
+  "Truck ahead. Be careful.": "Akwai babban mota a gabanka, ka kula.",
+  "Table ahead. Be careful.": "Akwai tebura a gabanka, ka kula.",
+  "Bench ahead. Be careful.": "Akwai benci a gabanka, ka kula.",
+  "Dog ahead. Be careful.": "Akwai kare a gabanka, ka kula.",
+  "Stop sign ahead. Be careful.": "Akwai alamar tsayawa a gabanka, ka kula.",
+  "Fire hydrant ahead. Be careful.": "Akwai famfon kashe gobara a gabanka, ka kula.",
+  "Couch ahead. Be careful.": "Akwai kujerar zama a gabanka, ka kula.",
+  "Bed ahead. Be careful.": "Akwai gado a gabanka, ka kula.",
+  "Toilet ahead. Be careful.": "Akwai bayan gida a gabanka, ka kula.",
+  "Potted plant ahead. Be careful.": "Akwai shuka a gabanka, ka kula.",
+  "Backpack ahead. Be careful.": "Akwai jakar baya a gabanka, ka kula.",
+  "Umbrella ahead. Be careful.": "Akwai laima a gabanka, ka kula.",
+  "Suitcase ahead. Be careful.": "Akwai akwati a gabanka, ka kula.",
+  "TV ahead. Be careful.": "Akwai talabijin a gabanka, ka kula.",
   "Obstacle ahead.": "Akwai cikas a gabanka, ka kula.",
   "Obstacle ahead": "Akwai cikas a gabanka, ka kula.",
   "Obstacle ahead. Please proceed carefully.": "Akwai cikas a gabanka, ka kula.",
   "Path is clear. You can continue.": "Hanya a buɗe take, babu wani cikas.",
-  "Chair ahead.": "Akwai kujera a gabanka, ka kula.",
-  "Chair ahead": "Akwai kujera a gabanka, ka kula.",
   "Door ahead.": "Akwai ƙofa a gabanka, ka kula.",
   "Door ahead": "Akwai ƙofa a gabanka, ka kula.",
   "Stairs ahead.": "Akwai tsani a gabanka, ka kula.",
@@ -96,15 +175,41 @@ const HAUSA_WARNING_MAP: Record<string, string> = {
 };
 
 const ARABIC_WARNING_MAP: Record<string, string> = {
+  "Person ahead. Be careful.": "يوجد شخص أمامك. يرجى توخي الحذر.",
   "Person ahead. Please be careful.": "يوجد شخص أمامك. يرجى توخي الحذر.",
   "Person ahead.": "يوجد شخص أمامك. يرجى توخي الحذر.",
   "Person ahead": "يوجد شخص أمامك. يرجى توخي الحذر.",
+  "Car ahead. Be careful.": "توجد سيارة أمامك. يرجى توخي الحذر.",
+  "Car ahead.": "توجد سيارة أمامك.",
+  "Car ahead": "توجد سيارة أمامك.",
+  "Chair ahead. Be careful.": "توجد كرسي أمامك. يرجى توخي الحذر.",
+  "Chair ahead.": "توجد كرسي أمامك.",
+  "Chair ahead": "توجد كرسي أمامك.",
+  "Motorcycle ahead. Be careful.": "توجد دراجة نارية أمامك. يرجى توخي الحذر.",
+  "Motorcycle ahead.": "توجد دراجة نارية أمامك.",
+  "Motorcycle ahead": "توجد دراجة نارية أمامك.",
+  "Bicycle ahead. Be careful.": "توجد دراجة أمامك. يرجى توخي الحذر.",
+  "Bicycle ahead.": "توجد دراجة أمامك.",
+  "Bicycle ahead": "توجد دراجة أمامك.",
+  "Bus ahead. Be careful.": "توجد حافلة أمامك. يرجى توخي الحذر.",
+  "Truck ahead. Be careful.": "توجد شاحنة أمامك. يرجى توخي الحذر.",
+  "Table ahead. Be careful.": "توجد طاولة أمامك. يرجى توخي الحذر.",
+  "Bench ahead. Be careful.": "يوجد مقعد أمامك. يرجى توخي الحذر.",
+  "Dog ahead. Be careful.": "يوجد كلب أمامك. يرجى توخي الحذر.",
+  "Stop sign ahead. Be careful.": "توجد إشارة توقف أمامك. يرجى توخي الحذر.",
+  "Fire hydrant ahead. Be careful.": "يوجد صنبور إطفاء أمامك. يرجى توخي الحذر.",
+  "Couch ahead. Be careful.": "توجد أريكة أمامك. يرجى توخي الحذر.",
+  "Bed ahead. Be careful.": "يوجد سرير أمامك. يرجى توخي الحذر.",
+  "Toilet ahead. Be careful.": "يوجد مرحاض أمامك. يرجى توخي الحذر.",
+  "Potted plant ahead. Be careful.": "توجد نبتة أمامك. يرجى توخي الحذر.",
+  "Backpack ahead. Be careful.": "توجد حقيبة ظهر أمامك. يرجى توخي الحذر.",
+  "Umbrella ahead. Be careful.": "توجد مظلة أمامك. يرجى توخي الحذر.",
+  "Suitcase ahead. Be careful.": "توجد حقيبة سفر أمامك. يرجى توخي الحذر.",
+  "TV ahead. Be careful.": "يوجد تلفاز أمامك. يرجى توخي الحذر.",
   "Obstacle ahead.": "يوجد عائق أمامك. يرجى التقدم بحذر.",
   "Obstacle ahead": "يوجد عائق أمامك. يرجى التقدم بحذر.",
   "Obstacle ahead. Please proceed carefully.": "يوجد عائق أمامك. يرجى التقدم بحذر.",
   "Path is clear. You can continue.": "المسار خالٍ. يمكنك المتابعة.",
-  "Chair ahead.": "توجد كرسي أمامك.",
-  "Chair ahead": "توجد كرسي أمامك.",
   "Door ahead.": "يوجد باب أمامك.",
   "Door ahead": "يوجد باب أمامك.",
   "Stairs ahead.": "توجد سلالم أمامك.",
@@ -124,15 +229,41 @@ const ARABIC_WARNING_MAP: Record<string, string> = {
 };
 
 const HINDI_WARNING_MAP: Record<string, string> = {
+  "Person ahead. Be careful.": "सामने व्यक्ति है। कृपया सावधान रहें।",
   "Person ahead. Please be careful.": "सामने व्यक्ति है। कृपया सावधान रहें।",
   "Person ahead.": "सामने व्यक्ति है। कृपया सावधान रहें।",
   "Person ahead": "सामने व्यक्ति है। कृपया सावधान रहें।",
+  "Car ahead. Be careful.": "सामने गाड़ी है। कृपया सावधान रहें।",
+  "Car ahead.": "सामने गाड़ी है। कृपया सावधान रहें।",
+  "Car ahead": "सामने गाड़ी है। कृपया सावधान रहें।",
+  "Chair ahead. Be careful.": "सामने कुर्सी है। कृपया सावधान रहें।",
+  "Chair ahead.": "सामने कुर्सी है।",
+  "Chair ahead": "सामने कुर्सी है।",
+  "Motorcycle ahead. Be careful.": "सामने मोटरसाइकिल है। कृपया सावधान रहें।",
+  "Motorcycle ahead.": "सामने मोटरसाइकिल है। कृपया सावधान रहें।",
+  "Motorcycle ahead": "सामने मोटरसाइकिल है। कृपया सावधान रहें।",
+  "Bicycle ahead. Be careful.": "सामने साइकिल है। कृपया सावधान रहें।",
+  "Bicycle ahead.": "सामने साइकिल है। कृपया सावधान रहें।",
+  "Bicycle ahead": "सामने साइकिल है। कृपया सावधान रहें।",
+  "Bus ahead. Be careful.": "सामने बस है। कृपया सावधान रहें।",
+  "Truck ahead. Be careful.": "सामने ट्रक है। कृपया सावधान रहें।",
+  "Table ahead. Be careful.": "सामने मेज़ है। कृपया सावधान रहें।",
+  "Bench ahead. Be careful.": "सामने बेंच है। कृपया सावधान रहें।",
+  "Dog ahead. Be careful.": "सामने कुत्ता है। कृपया सावधान रहें।",
+  "Stop sign ahead. Be careful.": "सामने स्टॉप का संकेत है। कृपया सावधान रहें।",
+  "Fire hydrant ahead. Be careful.": "सामने फायर हाइड्रेंट है। कृपया सावधान रहें।",
+  "Couch ahead. Be careful.": "सामने सोफा है। कृपया सावधान रहें।",
+  "Bed ahead. Be careful.": "सामने बिस्तर है। कृपया सावधान रहें।",
+  "Toilet ahead. Be careful.": "सामने शौचालय है। कृपया सावधान रहें।",
+  "Potted plant ahead. Be careful.": "सामने गमला है। कृपया सावधान रहें।",
+  "Backpack ahead. Be careful.": "सामने बैग है। कृपया सावधान रहें।",
+  "Umbrella ahead. Be careful.": "सामने छाता है। कृपया सावधान रहें।",
+  "Suitcase ahead. Be careful.": "सामने सूटकेस है। कृपया सावधान रहें।",
+  "TV ahead. Be careful.": "सामने टीवी है। कृपया सावधान रहें।",
   "Obstacle ahead.": "आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Obstacle ahead": "आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Obstacle ahead. Please proceed carefully.": "आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Path is clear. You can continue.": "रास्ता साफ है। आप आगे बढ़ सकते हैं।",
-  "Chair ahead.": "सामने कुर्सी है।",
-  "Chair ahead": "सामने कुर्सी है।",
   "Door ahead.": "सामने दरवाज़ा है।",
   "Door ahead": "सामने दरवाज़ा है।",
   "Stairs ahead.": "आगे सीढ़ियाँ हैं।",
@@ -144,7 +275,7 @@ const HINDI_WARNING_MAP: Record<string, string> = {
   "Warning: Person ahead.": "चेतावनी: सामने व्यक्ति है। कृपया सावधान रहें।",
   "Warning: Obstacle ahead.": "चेतावनी: आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Warning: Vehicle ahead.": "चेतावनी: सामने गाड़ी है।",
-  "Obstacle warning: Person ahead.": "चेतावनी: सामने व्यक्ति है। कृपया सावधान रहें。",
+  "Obstacle warning: Person ahead.": "चेतावनी: सामने व्यक्ति है। कृपया सावधान रहें।",
   "Obstacle warning: Obstacle ahead.": "चेतावनी: आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Obstacle warning: Vehicle ahead.": "चेतावनी: सामने गाड़ी है।",
   "This is a voice feedback test for the Vision-Link assistive interface.": "यह विजन-लिंक का वॉइस फीडबैक परीक्षण है।",
@@ -194,53 +325,158 @@ export class TTSService implements ITTSService {
 
   onStateChange(listener: TTSStateListener): () => void {
     this.listeners.add(listener);
-    listener(this.speaking, this.lastSpokenText);
     return () => {
       this.listeners.delete(listener);
     };
   }
 
-  /**
-   * Checks whether the target language voice engine is supported/installed on the Android device.
-   */
   checkLanguageSupport(lang: TTSLanguage): { supported: boolean; message: string } {
-    if (lang === 'en-GB' || lang === 'en-US') {
+    const meta = VOICE_REGISTRY[lang];
+    if (!meta) {
+      return { supported: false, message: `Language ${lang} is not supported.` };
+    }
+    if (meta.isBundled) {
+      return { supported: true, message: `${meta.name} is bundled and ready offline.` };
+    }
+    return {
+      supported: false,
+      message: `${meta.name}: ${meta.uninstalledBadge}. ${meta.installRequirementNotice}`,
+    };
+  }
+
+  async getVoicePackStatus(lang: TTSLanguage): Promise<VoicePackStatus> {
+    const meta: VoiceMetadata = VOICE_REGISTRY[lang] || VOICE_REGISTRY['en-GB'];
+    if (meta.isBundled) {
       return {
-        supported: true,
-        message: 'English (UK) Piper Jenny Dioco offline neural voice engine is configured and ready.',
+        language: lang,
+        isBundled: true,
+        isInstalled: true,
+        state: 'ready',
+        badge: meta.installedBadge,
+        details: meta.installRequirementNotice,
+        sha256: meta.sha256,
+        sizeMb: meta.sizeMb,
       };
     }
 
-    if (lang === 'ha-NG') {
+    if (Platform.OS === 'android' && TTSModule?.getVoicePackStatus) {
+      try {
+        const res = await TTSModule.getVoicePackStatus(lang);
+        const isVerified = res?.isVerified === true;
+        return {
+          language: lang,
+          isBundled: false,
+          isInstalled: isVerified,
+          state: isVerified ? 'ready' : 'voice_pack_required',
+          badge: isVerified ? meta.installedBadge : meta.uninstalledBadge,
+          details: isVerified ? `${meta.sizeMb} • 100% Offline Neural` : meta.installRequirementNotice,
+          sha256: meta.sha256,
+          sizeMb: meta.sizeMb,
+        };
+      } catch (err) {
+        console.warn('[TTSService] getVoicePackStatus error:', err);
+      }
+    }
+
+    return {
+      language: lang,
+      isBundled: false,
+      isInstalled: false,
+      state: 'voice_pack_required',
+      badge: meta.uninstalledBadge,
+      details: meta.installRequirementNotice,
+      sha256: meta.sha256,
+      sizeMb: meta.sizeMb,
+    };
+  }
+
+  async downloadVoicePack(lang: TTSLanguage): Promise<{ success: boolean; sha256: string }> {
+    if (Platform.OS === 'android' && TTSModule?.downloadVoicePack) {
+      try {
+        const res = await TTSModule.downloadVoicePack(lang);
+        return {
+          success: !!res?.success,
+          sha256: res?.sha256 || '',
+        };
+      } catch (e: any) {
+        console.error('[TTSService] downloadVoicePack error:', e?.message || e);
+        throw e;
+      }
+    }
+    throw new Error('Voice pack downloading is only available on Android native runtime.');
+  }
+
+  async deleteVoicePack(lang: TTSLanguage): Promise<boolean> {
+    if (Platform.OS === 'android' && TTSModule?.deleteVoicePack) {
+      try {
+        await TTSModule.deleteVoicePack(lang);
+        return true;
+      } catch (e: any) {
+        console.warn('[TTSService] deleteVoicePack error:', e?.message || e);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  async checkLanguageAvailability(lang: TTSLanguage): Promise<{ supported: boolean; missingData: boolean; message: string; badge: string }> {
+    const meta = VOICE_REGISTRY[lang] || VOICE_REGISTRY['en-GB'];
+    if (meta.isBundled) {
       return {
         supported: true,
-        message: 'Hausa (ha-NG) offline Piper neural voice engine (Malama Asabe) is configured and ready.',
+        missingData: false,
+        message: `${meta.name} offline Piper neural voice engine (${meta.voiceName}) is bundled and ready.`,
+        badge: meta.installedBadge,
       };
     }
 
-    if (lang === 'ar') {
+    const packStatus = await this.getVoicePackStatus(lang);
+    if (packStatus.isInstalled) {
       return {
         supported: true,
-        message: 'Arabic (ar) voice guidance is configured and ready.',
-      };
-    }
-
-    if (lang === 'hi-IN') {
-      return {
-        supported: true,
-        message: 'Hindi (hi-IN) voice guidance is configured and ready.',
+        missingData: false,
+        message: `${meta.name} offline Piper neural voice engine is installed and SHA-256 verified.`,
+        badge: meta.installedBadge,
       };
     }
 
     return {
       supported: false,
-      message: `Language ${lang} is not supported on this device.`,
+      missingData: true,
+      message: `${meta.name} requires voice pack installation. ${meta.installRequirementNotice}`,
+      badge: meta.uninstalledBadge,
     };
   }
 
-  /**
-   * Translates warning text into the target TTS language.
-   */
+  async installTtsData(): Promise<boolean> {
+    if (Platform.OS === 'android' && TTSModule?.installTtsData) {
+      try {
+        return await TTSModule.installTtsData();
+      } catch (e: any) {
+        console.warn('[TTSService] installTtsData error:', e?.message || e);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  translateDetectionWarning(warning: string, lang: TTSLanguage): string {
+    const trimmed = warning.trim();
+    if (lang === 'en-GB' || lang === 'en-US') {
+      if (ENGLISH_WARNING_MAP[trimmed]) {
+        return ENGLISH_WARNING_MAP[trimmed];
+      }
+      if (trimmed.startsWith('Warning: ')) {
+        const core = trimmed.replace('Warning: ', '').trim();
+        if (ENGLISH_WARNING_MAP[core] || ENGLISH_WARNING_MAP[core + '.']) {
+          return `Warning: ${ENGLISH_WARNING_MAP[core] || ENGLISH_WARNING_MAP[core + '.']}`;
+        }
+      }
+      return trimmed;
+    }
+    return this.translateText(trimmed, lang);
+  }
+
   translateText(text: string, lang: TTSLanguage): string {
     if (lang === 'en-GB' || lang === 'en-US') {
       return text;
@@ -270,7 +506,14 @@ export class TTSService implements ITTSService {
 
       const lower = trimmed.toLowerCase();
       if (lower.includes('person')) return 'Akwai mutum a gabanka, ka kula.';
+      if (lower.includes('car')) return 'Akwai mota a gabanka, ka kula.';
       if (lower.includes('chair')) return 'Akwai kujera a gabanka, ka kula.';
+      if (lower.includes('motorcycle')) return 'Akwai babur a gabanka, ka kula.';
+      if (lower.includes('bicycle')) return 'Akwai keke a gabanka, ka kula.';
+      if (lower.includes('bus')) return 'Akwai motar bas a gabanka, ka kula.';
+      if (lower.includes('truck')) return 'Akwai babban mota a gabanka, ka kula.';
+      if (lower.includes('table')) return 'Akwai tebura a gabanka, ka kula.';
+      if (lower.includes('bench')) return 'Akwai benci a gabanka, ka kula.';
       if (lower.includes('door')) return 'Akwai ƙofa a gabanka, ka kula.';
       if (lower.includes('stairs')) return 'Akwai tsani a gabanka, ka kula.';
       if (lower.includes('vehicle')) return 'Akwai mota a gabanka, ka kula.';
@@ -299,7 +542,16 @@ export class TTSService implements ITTSService {
 
       const lower = trimmed.toLowerCase();
       if (lower.includes('person')) return 'يوجد شخص أمامك. يرجى توخي الحذر.';
-      if (lower.includes('chair')) return 'توجد كرسي أمامك.';
+      if (lower.includes('car')) return 'توجد سيارة أمامك. يرجى توخي الحذر.';
+      if (lower.includes('chair')) return 'توجد كرسي أمامك. يرجى توخي الحذر.';
+      if (lower.includes('motorcycle')) return 'توجد دراجة نارية أمامك. يرجى توخي الحذر.';
+      if (lower.includes('bicycle')) return 'توجد دراجة أمامك. يرجى توخي الحذر.';
+      if (lower.includes('bus')) return 'توجد حافلة أمامك. يرجى توخي الحذر.';
+      if (lower.includes('truck')) return 'توجد شاحنة أمامك. يرجى توخي الحذر.';
+      if (lower.includes('table')) return 'توجد طاولة أمامك. يرجى توخي الحذر.';
+      if (lower.includes('bench')) return 'يوجد مقعد أمامك. يرجى توخي الحذر.';
+      if (lower.includes('dog')) return 'يوجد كلب أمامك. يرجى توخي الحذر.';
+      if (lower.includes('cat')) return 'توجد قطة أمامك. يرجى توخي الحذر.';
       if (lower.includes('door')) return 'يوجد باب أمامك.';
       if (lower.includes('stairs')) return 'توجد سلالم أمامك.';
       if (lower.includes('vehicle')) return 'توجد سيارة أمامك.';
@@ -328,7 +580,16 @@ export class TTSService implements ITTSService {
 
       const lower = trimmed.toLowerCase();
       if (lower.includes('person')) return 'सामने व्यक्ति है। कृपया सावधान रहें।';
-      if (lower.includes('chair')) return 'सामने कुर्सी है।';
+      if (lower.includes('car')) return 'सामने गाड़ी है। कृपया सावधान रहें।';
+      if (lower.includes('chair')) return 'सामने कुर्सी है। कृपया सावधान रहें।';
+      if (lower.includes('motorcycle')) return 'सामने मोटरसाइकिल है। कृपया सावधान रहें।';
+      if (lower.includes('bicycle')) return 'सामने साइकिल है। कृपया सावधान रहें।';
+      if (lower.includes('bus')) return 'सामने बस है। कृपया सावधान रहें।';
+      if (lower.includes('truck')) return 'सामने ट्रक है। कृपया सावधान रहें।';
+      if (lower.includes('table')) return 'सामने मेज़ है। कृपया सावधान रहें।';
+      if (lower.includes('bench')) return 'सामने बेंच है। कृपया सावधान रहें।';
+      if (lower.includes('dog')) return 'सामने कुत्ता है। कृपया सावधान रहें।';
+      if (lower.includes('cat')) return 'सामने बिल्ली है। कृपया सावधान रहें।';
       if (lower.includes('door')) return 'सामने दरवाज़ा है।';
       if (lower.includes('stairs')) return 'आगे सीढ़ियाँ हैं।';
       if (lower.includes('vehicle')) return 'सामने गाड़ी है।';
@@ -338,32 +599,48 @@ export class TTSService implements ITTSService {
     return text;
   }
 
-  async speak(text: string): Promise<void> {
+  async speak(text: string, langOverride?: TTSLanguage): Promise<void> {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
+      this.timeoutId = null;
     }
 
-    const targetLang = this.preferences.language;
-    const langCheck = this.checkLanguageSupport(targetLang);
+    const targetLang = langOverride || this.preferences.language;
+    const spokenText = this.translateText(text, targetLang);
 
-    const activeLang = langCheck.supported ? targetLang : 'en-US';
-    const spokenText = this.translateText(text, activeLang);
+    // Verify voice pack availability for unbundled languages
+    const meta = VOICE_REGISTRY[targetLang];
+    if (meta && !meta.isBundled) {
+      const packStatus = await this.getVoicePackStatus(targetLang);
+      if (!packStatus.isInstalled) {
+        const err = new Error(
+          `Voice Pack Required: ${meta.name} voice pack is not installed. Internet connection required for initial installation.`
+        );
+        (err as any).code = 'VOICE_PACK_REQUIRED';
+        throw err;
+      }
+    }
 
     this.speaking = true;
     this.lastSpokenText = spokenText;
+    console.log('[EdgeAI] TTS text:', spokenText, 'language:', targetLang);
     this.notifyListeners();
 
-    // Invoke Android Native TextToSpeech engine when running on Android
-    if (Platform.OS === 'android' && TTSModule) {
+    const activeTTSModule = NativeModules.TTSModule || TTSModule;
+    if (activeTTSModule?.speak) {
       try {
-        await TTSModule.speak(
+        await activeTTSModule.speak(
           spokenText,
           this.preferences.speechRate,
           this.preferences.pitch,
-          activeLang
+          targetLang
         );
-      } catch (e) {
-        console.warn('[TTSService] Native TTS Module call error:', e);
+      } catch (e: any) {
+        this.speaking = false;
+        this.lastSpokenText = '';
+        this.notifyListeners();
+        console.warn('[TTSService] Native TTS Module call error:', e?.message || e);
+        throw e;
       }
     }
 
@@ -413,7 +690,7 @@ export class TTSService implements ITTSService {
     if (Platform.OS === 'android' && TTSModule?.getEngineInfo) {
       try {
         const info = await TTSModule.getEngineInfo();
-        return info?.piperEngineStatus === 'ready';
+        return info?.piperHausaStatus === 'ready' || info?.piperEnglishStatus === 'ready';
       } catch {
         return true;
       }
