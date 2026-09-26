@@ -9,13 +9,13 @@
 
 import { NativeModules, Platform } from 'react-native';
 import { DetectionResult, DetectedObject, ModelInfo } from '../../types';
-import { cameraService } from '../camera/cameraService';
+import { cameraService, FramePayload } from '../camera/cameraService';
 import { isAllowedObstacle, formatObstacleLabel, generateObstacleWarning } from './objectFilter';
 
 const { TFLiteModule } = NativeModules;
 
 export interface IAIService {
-  detectObjectsFromFrame(frameData?: string, confidenceThreshold?: number): Promise<DetectionResult>;
+  detectObjectsFromFrame(frameData?: string | FramePayload, confidenceThreshold?: number): Promise<DetectionResult>;
   getModelInfo(): Promise<ModelInfo | null>;
   isModelLoaded(): Promise<boolean>;
   loadModel(): Promise<boolean>;
@@ -70,10 +70,11 @@ export class AIService implements IAIService {
    * Performs 100% offline on-device object detection using native TFLite interpreter.
    */
   async detectObjectsFromFrame(
-    frameData?: string,
+    frameData?: string | FramePayload,
     confidenceThreshold: number = 0.50
   ): Promise<DetectionResult> {
-    if (!frameData || frameData.trim().length === 0) {
+    const rawFrame = typeof frameData === 'string' ? frameData : frameData?.data;
+    if (!rawFrame || rawFrame.trim().length === 0) {
       return {
         status: 'error',
         warning: null,
@@ -154,7 +155,7 @@ export class AIService implements IAIService {
     console.log('[OfflineAI] Running in non-Android / simulation mode (100% offline)');
 
     // Infer object from frame signature if provided (e.g. during unit tests)
-    const lowerFrame = frameData.toLowerCase();
+    const lowerFrame = rawFrame.toLowerCase();
     let detectedClass = 'person';
     if (lowerFrame.includes('clear')) {
       detectedClass = 'clear';

@@ -113,26 +113,33 @@ class TTSModule(private val reactContext: ReactApplicationContext) :
         val isArabic = language.equals("ar", ignoreCase = true) || language.startsWith("ar-", ignoreCase = true)
         val isHindi = language.equals("hi-IN", ignoreCase = true) || language.equals("hi", ignoreCase = true)
 
+        val HAUSA_LOCALE = java.util.Locale("ha", "NG")
+        val FALLBACK_LOCALE = java.util.Locale.US
+
         if (isHausa) {
-            Log.i(TAG, "Selected Language: $language (Hausa)")
+            Log.i(TAG, "Selected Language: $language (Hausa) [Locale: ${HAUSA_LOCALE}]")
             Log.i(TAG, "Selected Voice: Piper ONNX (Malama Asabe)")
             Log.i(TAG, "TTS Engine: PiperHausaEngine")
 
-            if (!piperHausaEngine.isReady()) {
-                val ok = piperHausaEngine.initialize()
-                if (!ok) {
-                    val errMsg = "Hausa Piper model failed initialization or SHA-256 verification mismatch."
-                    Log.e(TAG, errMsg)
-                    sendEvent("onTTSError", utteranceId)
-                    val errorMap = Arguments.createMap().apply {
-                        putString("stage", "MODEL_VERIFY")
-                        putString("code", "PIPER_INIT_FAILED")
-                        putString("message", errMsg)
-                        putString("language", language)
-                    }
-                    promise?.reject("PIPER_INIT_FAILED", errMsg, errorMap)
-                    return
+            var hausaReady = piperHausaEngine.isReady()
+            if (!hausaReady) {
+                hausaReady = piperHausaEngine.initialize()
+            }
+
+            if (!hausaReady) {
+                Log.w(TAG, "Hausa Piper model unavailable. Falling back to English (${FALLBACK_LOCALE}), NEVER French.")
+                if (!piperEnglishEngine.isReady()) {
+                    piperEnglishEngine.initialize()
                 }
+                piperEnglishEngine.speak(text, utteranceId, object : PiperEnglishEngine.Callback {
+                    override fun onStart(utteranceId: String) { sendEvent("onTTSStart", utteranceId) }
+                    override fun onDone(utteranceId: String) { sendEvent("onTTSDone", utteranceId); promise?.resolve(utteranceId) }
+                    override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
+                        sendEvent("onTTSError", utteranceId)
+                        promise?.reject(errorCode, "[$stage] $message")
+                    }
+                })
+                return
             }
 
             piperHausaEngine.speak(text, utteranceId, object : PiperHausaEngine.Callback {
@@ -146,15 +153,18 @@ class TTSModule(private val reactContext: ReactApplicationContext) :
                 }
 
                 override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
-                    Log.e(TAG, "Piper Hausa error [$stage/$errorCode]: $message on utterance: $utteranceId")
-                    sendEvent("onTTSError", utteranceId)
-                    val errorMap = Arguments.createMap().apply {
-                        putString("stage", stage)
-                        putString("code", errorCode)
-                        putString("message", message)
-                        putString("language", language)
+                    Log.e(TAG, "Piper Hausa error [$stage/$errorCode]: $message on utterance: $utteranceId. Falling back to ${FALLBACK_LOCALE}.")
+                    if (!piperEnglishEngine.isReady()) {
+                        piperEnglishEngine.initialize()
                     }
-                    promise?.reject(errorCode, "[$stage] $message", errorMap)
+                    piperEnglishEngine.speak(text, utteranceId, object : PiperEnglishEngine.Callback {
+                        override fun onStart(uid: String) { sendEvent("onTTSStart", uid) }
+                        override fun onDone(uid: String) { sendEvent("onTTSDone", uid); promise?.resolve(uid) }
+                        override fun onError(uid: String, s: String, c: String, m: String) {
+                            sendEvent("onTTSError", uid)
+                            promise?.reject(c, "[$s] $m")
+                        }
+                    })
                 }
             })
             return

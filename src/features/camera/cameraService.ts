@@ -8,12 +8,20 @@
  * 4. Zero cloud / zero network dependency
  */
 
-import { NativeModules, NativeEventEmitter, Platform } from 'react-native';
+import { NativeModules, NativeEventEmitter, Platform, PermissionsAndroid } from 'react-native';
 import { CameraDeviceInfo, CameraStatus } from '../../types';
 
 const { UsbCameraModule } = NativeModules;
 
 export type CameraStatusListener = (status: CameraStatus) => void;
+
+export interface FramePayload {
+  data: string;
+  frameSequence: number;
+  timestamp: number;
+  width: number;
+  height: number;
+}
 
 export interface ICameraService {
   detectCamera(): Promise<CameraDeviceInfo | null>;
@@ -21,11 +29,12 @@ export interface ICameraService {
   disconnectCamera(): Promise<void>;
   startStream(): Promise<boolean>;
   stopStream(): Promise<void>;
-  captureFrame(): Promise<string | null>;
+  captureFrame(): Promise<FramePayload | string | null>;
   getStatus(): CameraStatus;
   getDeviceInfo(): CameraDeviceInfo | null;
   onStatusChange(listener: CameraStatusListener): () => void;
   setCustomFrame(frameBase64: string | null): void;
+  requestCameraPermission(): Promise<boolean>;
 }
 
 export class CameraService implements ICameraService {
@@ -171,7 +180,7 @@ export class CameraService implements ICameraService {
     this.customFrame = frameBase64;
   }
 
-  async captureFrame(): Promise<string | null> {
+  async captureFrame(): Promise<FramePayload | string | null> {
     if (this.status !== 'streaming' && this.status !== 'connected') {
       return null;
     }
@@ -183,7 +192,8 @@ export class CameraService implements ICameraService {
     if (Platform.OS === 'android' && UsbCameraModule) {
       try {
         const liveFrame = await UsbCameraModule.captureFrame();
-        return liveFrame || null;
+        if (!liveFrame) return null;
+        return liveFrame;
       } catch (e) {
         console.warn('[CameraService] Native captureFrame error:', e);
         return null;
@@ -192,6 +202,26 @@ export class CameraService implements ICameraService {
 
     // Default frame for Jest unit test runner
     return 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP...';
+  }
+
+  async requestCameraPermission(): Promise<boolean> {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Vision-Link Camera Permission',
+            message: 'Vision-Link needs camera access to process video feeds from connected cameras for assistive obstacle detection.',
+            buttonPositive: 'Allow',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn('[CameraService] Permission request error:', err);
+        return false;
+      }
+    }
+    return true;
   }
 
   getStatus(): CameraStatus {

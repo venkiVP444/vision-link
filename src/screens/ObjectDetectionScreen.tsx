@@ -42,6 +42,7 @@ export const ObjectDetectionScreen: React.FC = () => {
     timestamp: 0,
   });
   const isProcessingRef = useRef<boolean>(false);
+  const prevCamStatusRef = useRef<CameraStatus>(cameraService.getStatus());
 
   useEffect(() => {
     const unsubTTS = ttsService.onStateChange((isSpk) => {
@@ -61,16 +62,30 @@ export const ObjectDetectionScreen: React.FC = () => {
         setWarningText(null);
         setDetectedObjects([]);
         setDisplayState('idle');
+        prevCamStatusRef.current = 'disconnected';
       } else if (status === 'connected') {
         // Automatically start continuous frame stream when camera is connected
         cameraService.startStream();
+        if (prevCamStatusRef.current !== 'connected') {
+          prevCamStatusRef.current = 'connected';
+          console.log('[ObjectDetectionScreen] Camera connected, announcing status...');
+          ttsService.speak('OTG camera connected successfully.').catch((err) => {
+            console.warn('[ObjectDetectionScreen] Camera connection announcement error:', err);
+          });
+        }
+      } else if (status === 'streaming') {
+        prevCamStatusRef.current = 'streaming';
       }
     });
 
-    // Auto-detect and start continuous stream if camera is attached
-    cameraService.detectCamera().then((device) => {
-      if (device) {
-        cameraService.startStream();
+    // Ensure camera permission is granted and auto-detect camera
+    cameraService.requestCameraPermission().then((granted) => {
+      if (granted) {
+        cameraService.detectCamera().then((device) => {
+          if (device) {
+            cameraService.startStream();
+          }
+        });
       }
     });
 
@@ -131,6 +146,7 @@ export const ObjectDetectionScreen: React.FC = () => {
   };
 
   const handleConnectCamera = async () => {
+    await cameraService.requestCameraPermission();
     await cameraService.connectCamera();
     await cameraService.startStream();
   };
@@ -151,22 +167,13 @@ export const ObjectDetectionScreen: React.FC = () => {
     }
 
     isProcessingRef.current = true;
-    if (displayState === 'idle') {
-      setDisplayState('capturing');
-    }
     setErrorMessage(null);
 
     try {
       const frame = await cameraService.captureFrame();
 
       if (!frame) {
-        setDisplayState('no-warning');
-        setWarningText(null);
-        setDetectedObjects([]);
-        if (ttsService.isSpeaking()) {
-          ttsService.stopSpeaking();
-        }
-        lastSpokenRef.current = { warning: null, timestamp: 0 };
+        // No fresh frame available yet from ImageReader; return cleanly without locking UI in loading state
         return;
       }
 

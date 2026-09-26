@@ -36,7 +36,7 @@ export const CameraScreen: React.FC = () => {
     await ttsService.speak('Connecting to external UVC camera.');
     await cameraService.connectCamera();
     setLoading(false);
-    await ttsService.speak('External camera connected successfully.');
+    await ttsService.speak('OTG camera connected successfully.');
   };
 
   const handleDisconnectCamera = async () => {

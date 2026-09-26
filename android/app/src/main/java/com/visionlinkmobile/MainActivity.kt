@@ -30,7 +30,13 @@ class MainActivity : ReactActivity(), TextToSpeech.OnInitListener {
   override fun onInit(status: Int) {
     if (status == TextToSpeech.SUCCESS) {
       isSystemTtsReady = true
-      Log.i(TAG, "MainActivity system TTS initialized successfully")
+      // Explicitly configure Locale("ha", "NG") with fallback to Locale.US, NEVER French
+      val hausaLocale = Locale("ha", "NG")
+      val langResult = systemTts?.setLanguage(hausaLocale)
+      if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+        systemTts?.language = Locale.US
+      }
+      Log.i(TAG, "MainActivity system TTS initialized successfully with Hausa/US locale")
     } else {
       Log.e(TAG, "MainActivity system TTS initialization failed: $status")
     }
@@ -120,8 +126,8 @@ class MainActivity : ReactActivity(), TextToSpeech.OnInitListener {
             speakSystemTts(text, Locale.forLanguageTag("hi-IN"), triggerTime)
           }
           else -> {
-            Log.i(TAG, "[ENGINE] Fallback System TTS")
-            speakSystemTts(text, Locale.UK, triggerTime)
+            Log.i(TAG, "[ENGINE] Fallback System TTS: using Locale.US (never French)")
+            speakSystemTts(text, Locale.US, triggerTime)
           }
         }
       }
@@ -156,13 +162,22 @@ class MainActivity : ReactActivity(), TextToSpeech.OnInitListener {
         }
       })
 
-      systemTts?.language = locale
+      val langRes = systemTts?.setLanguage(locale)
+      if (langRes == TextToSpeech.LANG_MISSING_DATA || langRes == TextToSpeech.LANG_NOT_SUPPORTED) {
+        Log.w(TAG, "Requested locale $locale not supported. Falling back to Locale.US (never French)")
+        systemTts?.language = Locale.US
+      }
       systemTts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, uttId)
     }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(null)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+      if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        requestPermissions(arrayOf(android.Manifest.permission.CAMERA), 101)
+      }
+    }
     val filter = IntentFilter(ACTION_TTS_TEST)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       registerReceiver(ttsReceiver, filter, Context.RECEIVER_EXPORTED)

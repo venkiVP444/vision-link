@@ -212,6 +212,18 @@ const HAUSA_WARNING_MAP: Record<string, string> = {
   "Obstacle warning: Vehicle ahead.": "Gargaɗi: Akwai mota a gabanka, ka kula.",
   "This is a voice feedback test for the Vision-Link assistive interface.": "Wannan gwajin muryar Vision-Link ne game da tsarin taimako.",
   "This is a voice feedback test.": "Wannan gwajin muryar Vision-Link ne.",
+  "OTG camera connected successfully.": "An haɗa kyamarar OTG cikin nasara.",
+  "OTG camera connected successfully": "An haɗa kyamarar OTG cikin nasara.",
+  "External camera connected successfully.": "An haɗa kyamarar OTG cikin nasara.",
+  "External camera connected successfully": "An haɗa kyamarar OTG cikin nasara.",
+  "Connecting to external UVC camera.": "Ana haɗawa da kyamarar OTG.",
+  "Connecting to external UVC camera": "Ana haɗawa da kyamarar OTG.",
+  "External camera disconnected.": "An cire kyamarar OTG.",
+  "External camera disconnected": "An cire kyamarar OTG.",
+  "Camera stream paused.": "An dakatar da hoton kyamara.",
+  "Live video streaming active.": "Bidiyo mai gudana na aiki.",
+  "Camera not connected. Connect external UVC camera to analyze path.": "Ba a haɗa kyamara ba. Haɗa kyamarar OTG don bincika hanya.",
+  "No current obstacle analysis available.": "Babu wani binciken cikas a yanzu.",
 };
 
 const ARABIC_WARNING_MAP: Record<string, string> = {
@@ -286,6 +298,18 @@ const ARABIC_WARNING_MAP: Record<string, string> = {
   "Obstacle warning: Vehicle ahead.": "تحذير: توجد سيارة أمامك.",
   "This is a voice feedback test for the Vision-Link assistive interface.": "هذا اختبار للتغذية الراجعة الصوتية لمنظومة فيجن لينك.",
   "This is a voice feedback test.": "يوجد شخص أمامك. يرجى توخي الحذر.",
+  "OTG camera connected successfully.": "تم توصيل كاميرا يو إس بي بنجاح.",
+  "OTG camera connected successfully": "تم توصيل كاميرا يو إس بي بنجاح.",
+  "External camera connected successfully.": "تم توصيل كاميرا يو إس بي بنجاح.",
+  "External camera connected successfully": "تم توصيل كاميرا يو إس بي بنجاح.",
+  "Connecting to external UVC camera.": "جارٍ الاتصال بالكاميرا الخارجية.",
+  "Connecting to external UVC camera": "جارٍ الاتصال بالكاميرا الخارجية.",
+  "External camera disconnected.": "تم فصل الكاميرا الخارجية.",
+  "External camera disconnected": "تم فصل الكاميرا الخارجية.",
+  "Camera stream paused.": "تم إيقاف بث الكاميرا مؤقتًا.",
+  "Live video streaming active.": "بث الفيديو المباشر نشط.",
+  "Camera not connected. Connect external UVC camera to analyze path.": "الكاميرا غير متصلة. يرجى توصيل الكاميرا لتحليل المسار.",
+  "No current obstacle analysis available.": "لا يوجد تحليل حالي للعوائق.",
 };
 
 const HINDI_WARNING_MAP: Record<string, string> = {
@@ -360,6 +384,18 @@ const HINDI_WARNING_MAP: Record<string, string> = {
   "Obstacle warning: Vehicle ahead.": "चेतावनी: सामने गाड़ी है।",
   "This is a voice feedback test for the Vision-Link assistive interface.": "यह विजन-लिंक का वॉइस फीडबैक परीक्षण है।",
   "This is a voice feedback test.": "सामने व्यक्ति है। कृपया सावधान रहें।",
+  "OTG camera connected successfully.": "ओटीजी कैमरा सफलतापूर्वक कनेक्ट हो गया।",
+  "OTG camera connected successfully": "ओटीजी कैमरा सफलतापूर्वक कनेक्ट हो गया।",
+  "External camera connected successfully.": "बाहरी कैमरा सफलतापूर्वक कनेक्ट हो गया।",
+  "External camera connected successfully": "बाहरी कैमरा सफलतापूर्वक कनेक्ट हो गया।",
+  "Connecting to external UVC camera.": "बाहरी कैमरे से कनेक्ट हो रहा है।",
+  "Connecting to external UVC camera": "बाहरी कैमरे से कनेक्ट हो रहा है।",
+  "External camera disconnected.": "बाहरी कैमरा डिस्कनेक्ट हो गया।",
+  "External camera disconnected": "बाहरी कैमरा डिस्कनेक्ट हो गया।",
+  "Camera stream paused.": "कैमरा स्ट्रीम रोक दिया गया।",
+  "Live video streaming active.": "लाइव वीडियो स्ट्रीमिंग सक्रिय है।",
+  "Camera not connected. Connect external UVC camera to analyze path.": "कैमरा कनेक्ट नहीं है। पथ का विश्लेषण करने के लिए कैमरा कनेक्ट करें।",
+  "No current obstacle analysis available.": "वर्तमान में कोई बाधा विश्लेषण उपलब्ध नहीं है।",
 };
 
 export class TTSService implements ITTSService {
@@ -620,6 +656,8 @@ export class TTSService implements ITTSService {
       if (lower.includes('door')) return 'Akwai ƙofa a gabanka, ka kula.';
       if (lower.includes('stairs')) return 'Akwai tsani a gabanka, ka kula.';
       if (lower.includes('vehicle')) return 'Akwai mota a gabanka, ka kula.';
+      if (lower.includes('connected')) return 'An haɗa kyamarar OTG cikin nasara.';
+      if (lower.includes('disconnected')) return 'An cire kyamarar OTG.';
       if (lower.includes('obstacle') || lower.includes('cikas')) return 'Akwai cikas a gabanka, ka kula.';
       return text;
     }
