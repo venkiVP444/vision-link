@@ -227,7 +227,7 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                         "potted plant" -> "Potted plant"
                         else -> rawLabel.replaceFirstChar { it.uppercase() }
                     }
-                    val itemWarning = "$displayLabel ahead. Be careful."
+                    val itemWarning = "$displayLabel ahead, be careful"
 
                     Log.i(TAG, """
 [EdgeAI]
@@ -287,7 +287,7 @@ Camera Connection State: connected
             }
 
             val warning = if (primaryLabel != null) {
-                "$primaryLabel ahead. Be careful."
+                "$primaryLabel ahead, be careful"
             } else {
                 null
             }

@@ -222,7 +222,7 @@ describe('Hands-Free Real-Time Voice Pipeline Tests', () => {
     // 2. AI detection (100% local on-device TFLite)
     const result = await aiService.detectObjectsFromFrame(frame!);
     expect(result.status).toBe('success');
-    expect(result.warning).toBe('Person ahead. Be careful.');
+    expect(result.warning).toBe('Person ahead, be careful');
 
     // 3. Hands-free auto-announce pipeline
     const prefs = ttsService.getPreferences();
@@ -232,7 +232,7 @@ describe('Hands-Free Real-Time Voice Pipeline Tests', () => {
     }
 
     // 4. Verification that dynamic warning mapped and reached English TTS
-    expect(speakSpy).toHaveBeenCalledWith('Person ahead. Be careful.');
-    expect(ttsService.getLastSpokenText()).toBe('Person ahead. Be careful.');
+    expect(speakSpy).toHaveBeenCalledWith('Person ahead, be careful');
+    expect(ttsService.getLastSpokenText()).toBe('Person ahead, be careful');
   });
 });

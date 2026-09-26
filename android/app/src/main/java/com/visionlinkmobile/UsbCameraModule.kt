@@ -13,6 +13,7 @@ import android.hardware.usb.UsbManager
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import com.facebook.react.bridge.*
@@ -43,6 +44,8 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
 
     @Volatile
     private var latestFrameBase64: String? = null
+    @Volatile
+    private var latestFrameTimestamp: Long = 0L
 
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
@@ -151,6 +154,7 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
         cameraStatus = "disconnected"
         activeDeviceInfo = null
         latestFrameBase64 = null
+        latestFrameTimestamp = 0L
         emitStatusChanged(cameraStatus)
     }
 
@@ -226,6 +230,7 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
 
                             val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
                             latestFrameBase64 = "data:image/jpeg;base64,$b64"
+                            latestFrameTimestamp = SystemClock.elapsedRealtime()
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "[OTG] Error in onImageAvailable: ${e.message}")
@@ -310,6 +315,8 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
         } catch (_: Exception) {}
         imageReader = null
 
+        latestFrameBase64 = null
+        latestFrameTimestamp = 0L
         stopBackgroundThread()
     }
 
@@ -390,6 +397,11 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun captureFrame(promise: Promise) {
         if (cameraStatus == "disconnected") {
+            promise.resolve(null)
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        if (latestFrameBase64 == null || (latestFrameTimestamp > 0 && now - latestFrameTimestamp > 2000L)) {
             promise.resolve(null)
             return
         }

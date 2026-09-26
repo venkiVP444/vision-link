@@ -87,7 +87,7 @@ export const ObjectDetectionScreen: React.FC = () => {
     };
   }, []);
 
-  const announceWarningWithDebounce = (warning: string) => {
+  const announceWarningWithDebounce = async (warning: string) => {
     const prefs = ttsService.getPreferences();
     if (!prefs.autoAnnounceDetections) {
       console.log('[ObjectDetectionScreen] Auto-Announce is OFF. Speech suppressed.');
@@ -101,16 +101,25 @@ export const ObjectDetectionScreen: React.FC = () => {
     const now = Date.now();
     const last = lastSpokenRef.current;
 
-    const isDuplicate =
-      last.warning === warning && now - last.timestamp < DEBOUNCE_INTERVAL_MS;
+    const isSameObject = last.warning === warning;
+    const isDuplicate = isSameObject && (now - last.timestamp < DEBOUNCE_INTERVAL_MS);
 
     if (isDuplicate) {
       console.log('[ObjectDetectionScreen] Duplicate warning suppressed within debounce window:', warning);
       return;
     }
 
-    if (ttsService.isSpeaking()) {
-      console.log('[ObjectDetectionScreen] TTS is currently speaking. Avoiding overlapping audio.');
+    // When detection changes (e.g. Chair -> Person):
+    // Immediately cancel and stop any stale TTS and speak the new object.
+    if (!isSameObject && ttsService.isSpeaking()) {
+      console.log('[ObjectDetectionScreen] Object changed from', last.warning, 'to', warning, '- cancelling stale TTS');
+      try {
+        await ttsService.stopSpeaking();
+      } catch (err) {
+        console.warn('[ObjectDetectionScreen] Error stopping stale speech:', err);
+      }
+    } else if (isSameObject && ttsService.isSpeaking()) {
+      console.log('[ObjectDetectionScreen] TTS is currently speaking same warning. Avoiding overlapping audio.');
       return;
     }
 
@@ -137,6 +146,7 @@ export const ObjectDetectionScreen: React.FC = () => {
       setWarningText(null);
       setDetectedObjects([]);
       ttsService.stopSpeaking();
+      lastSpokenRef.current = { warning: null, timestamp: 0 };
       return;
     }
 
@@ -156,7 +166,7 @@ export const ObjectDetectionScreen: React.FC = () => {
         if (ttsService.isSpeaking()) {
           ttsService.stopSpeaking();
         }
-        lastSpokenRef.current = { warning: null, timestamp: Date.now() };
+        lastSpokenRef.current = { warning: null, timestamp: 0 };
         return;
       }
 
@@ -184,21 +194,22 @@ export const ObjectDetectionScreen: React.FC = () => {
         const prefs = ttsService.getPreferences();
         const spokenSentence = ttsService.translateDetectionWarning(result.warning, prefs.language);
         console.log(`[EdgeAI] final warning="${result.warning}" | TTS text="${spokenSentence}"`);
-        announceWarningWithDebounce(spokenSentence);
+        await announceWarningWithDebounce(spokenSentence);
       } else {
         setDisplayState('no-warning');
         setWarningText(null);
         setDetectedObjects([]);
         setErrorMessage(null);
-        // Requirement 6: Clear-path logic / no sticky labels
+        // Requirement: Clear-path logic / no sticky labels
         // When no valid allowed object is detected:
-        // - Clear current detection state
+        // - Clear current detection state immediately
         // - Stay silent
         // - Stop previous TTS if speaking
+        // - Reset lastSpokenRef so future reappearance is treated as a new detection
         if (ttsService.isSpeaking()) {
           ttsService.stopSpeaking();
         }
-        lastSpokenRef.current = { warning: null, timestamp: Date.now() };
+        lastSpokenRef.current = { warning: null, timestamp: 0 };
       }
     } catch (err: any) {
       console.warn('[ObjectDetectionScreen] Detection cycle error:', err);

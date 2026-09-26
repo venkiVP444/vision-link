@@ -62,7 +62,7 @@ describe('Vision-Link Service Layer', () => {
       const result = await aiService.detectObjectsFromFrame('BASE64_FRAME_STRING', 0.5);
 
       expect(result.status).toBe('success');
-      expect(result.warning).toBe('Person ahead. Be careful.');
+      expect(result.warning).toBe('Person ahead, be careful');
       expect(result.inferenceTimeMs).toBeGreaterThan(0);
       expect(result.model).toContain('SSD MobileNet v1');
       expect(result.objects?.length).toBeGreaterThan(0);
@@ -91,14 +91,14 @@ describe('Vision-Link Service Layer', () => {
     it('dynamically processes live camera frames and announces exact allowed objects, rejecting non-allowlisted objects', async () => {
       await cameraService.connectCamera();
       const testCases: { frame: string; expectedLabel: string; expectedWarning: string; classId: number }[] = [
-        { frame: 'FRAME_PERSON_DATA', expectedLabel: 'Person', expectedWarning: 'Person ahead. Be careful.', classId: 0 },
-        { frame: 'FRAME_CAR_DATA', expectedLabel: 'Car', expectedWarning: 'Car ahead. Be careful.', classId: 2 },
-        { frame: 'FRAME_CHAIR_DATA', expectedLabel: 'Chair', expectedWarning: 'Chair ahead. Be careful.', classId: 61 },
-        { frame: 'FRAME_MOTORCYCLE_DATA', expectedLabel: 'Motorcycle', expectedWarning: 'Motorcycle ahead. Be careful.', classId: 3 },
-        { frame: 'FRAME_BICYCLE_DATA', expectedLabel: 'Bicycle', expectedWarning: 'Bicycle ahead. Be careful.', classId: 1 },
-        { frame: 'FRAME_BUS_DATA', expectedLabel: 'Bus', expectedWarning: 'Bus ahead. Be careful.', classId: 5 },
-        { frame: 'FRAME_DOG_DATA', expectedLabel: 'Dog', expectedWarning: 'Dog ahead. Be careful.', classId: 17 },
-        { frame: 'FRAME_TV_DATA', expectedLabel: 'TV', expectedWarning: 'TV ahead. Be careful.', classId: 71 },
+        { frame: 'FRAME_PERSON_DATA', expectedLabel: 'Person', expectedWarning: 'Person ahead, be careful', classId: 0 },
+        { frame: 'FRAME_CAR_DATA', expectedLabel: 'Car', expectedWarning: 'Car ahead, be careful', classId: 2 },
+        { frame: 'FRAME_CHAIR_DATA', expectedLabel: 'Chair', expectedWarning: 'Chair ahead, be careful', classId: 61 },
+        { frame: 'FRAME_MOTORCYCLE_DATA', expectedLabel: 'Motorcycle', expectedWarning: 'Motorcycle ahead, be careful', classId: 3 },
+        { frame: 'FRAME_BICYCLE_DATA', expectedLabel: 'Bicycle', expectedWarning: 'Bicycle ahead, be careful', classId: 1 },
+        { frame: 'FRAME_BUS_DATA', expectedLabel: 'Bus', expectedWarning: 'Bus ahead, be careful', classId: 5 },
+        { frame: 'FRAME_DOG_DATA', expectedLabel: 'Dog', expectedWarning: 'Dog ahead, be careful', classId: 17 },
+        { frame: 'FRAME_TV_DATA', expectedLabel: 'TV', expectedWarning: 'TV ahead, be careful', classId: 71 },
       ];
 
       for (const tc of testCases) {

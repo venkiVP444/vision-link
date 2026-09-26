@@ -63,15 +63,15 @@ export function formatObstacleLabel(rawLabel: string): string {
 
 /**
  * Formulates the standard dynamic obstacle warning sentence:
- * "<Object> ahead. Be careful."
+ * "<Object> ahead, be careful"
  */
 export function generateObstacleWarning(label: string, position: string = 'ahead'): string {
   const formatted = formatObstacleLabel(label);
   if (position === 'left') {
-    return `${formatted} on your left. Be careful.`;
+    return `${formatted} on your left, be careful`;
   }
   if (position === 'right') {
-    return `${formatted} on your right. Be careful.`;
+    return `${formatted} on your right, be careful`;
   }
-  return `${formatted} ahead. Be careful.`;
+  return `${formatted} ahead, be careful`;
 }
