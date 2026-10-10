@@ -97,8 +97,10 @@ describe('Vision-Link Service Layer', () => {
         { frame: 'FRAME_MOTORCYCLE_DATA', expectedLabel: 'Motorcycle', expectedWarning: 'Motorcycle ahead, be careful', classId: 3 },
         { frame: 'FRAME_BICYCLE_DATA', expectedLabel: 'Bicycle', expectedWarning: 'Bicycle ahead, be careful', classId: 1 },
         { frame: 'FRAME_BUS_DATA', expectedLabel: 'Bus', expectedWarning: 'Bus ahead, be careful', classId: 5 },
-        { frame: 'FRAME_DOG_DATA', expectedLabel: 'Dog', expectedWarning: 'Dog ahead, be careful', classId: 17 },
-        { frame: 'FRAME_TV_DATA', expectedLabel: 'TV', expectedWarning: 'TV ahead, be careful', classId: 71 },
+        { frame: 'FRAME_TRUCK_DATA', expectedLabel: 'Truck', expectedWarning: 'Truck ahead, be careful', classId: 7 },
+        { frame: 'FRAME_TABLE_DATA', expectedLabel: 'Table', expectedWarning: 'Table ahead, be careful', classId: 66 },
+        { frame: 'FRAME_BED_DATA', expectedLabel: 'Bed', expectedWarning: 'Bed ahead, be careful', classId: 65 },
+        { frame: 'FRAME_SOFA_DATA', expectedLabel: 'Sofa', expectedWarning: 'Sofa ahead, be careful', classId: 62 },
       ];
 
       for (const tc of testCases) {
@@ -136,13 +138,16 @@ describe('Vision-Link Service Layer', () => {
       expect(clearResult.warning).toBeNull();
       expect(clearResult.objects?.length).toBe(0);
 
-      // Test non-allowlisted / unsupported object (e.g. cat, bottle): MUST be ignored, NO TTS
-      cameraService.setCustomFrame('FRAME_UNSUPPORTED_CAT');
-      const catFrame = await cameraService.captureFrame();
-      const catResult = await aiService.detectObjectsFromFrame(catFrame!);
-      expect(catResult.status).toBe('success');
-      expect(catResult.warning).toBeNull();
-      expect(catResult.objects?.length).toBe(0);
+      // Test non-allowlisted objects (e.g. Dog, TV, Cat, Bottle): MUST be ignored, NO TTS
+      const nonAllowlisted = ['FRAME_DOG_DATA', 'FRAME_TV_DATA', 'FRAME_UNSUPPORTED_CAT', 'FRAME_BOTTLE_DATA'];
+      for (const rawFrame of nonAllowlisted) {
+        cameraService.setCustomFrame(rawFrame);
+        const nonFrame = await cameraService.captureFrame();
+        const nonResult = await aiService.detectObjectsFromFrame(nonFrame!);
+        expect(nonResult.status).toBe('success');
+        expect(nonResult.warning).toBeNull();
+        expect(nonResult.objects?.length).toBe(0);
+      }
 
       cameraService.setCustomFrame(null);
     });
@@ -353,6 +358,57 @@ describe('Vision-Link Service Layer', () => {
       // Reset to English
       ttsService.setPreferences({ language: 'en-US' });
       expect(ttsService.getPreferences().language).toBe('en-US');
+    });
+    it('verifies relevant object allowlist contract and unsupported class documentation', () => {
+      const {
+        isAllowedObstacle,
+        SUPPORTED_RELEVANT_OBJECT_ALLOWLIST,
+        UNSUPPORTED_REQUESTED_OBJECTS,
+        formatObstacleLabel,
+      } = require('../src/features/ai/objectFilter');
+
+      // 1. Supported classes
+      const supported = [
+        'person',
+        'car',
+        'truck',
+        'bus',
+        'motorcycle',
+        'bicycle',
+        'chair',
+        'table',
+        'dining table',
+        'bed',
+        'sofa',
+        'couch',
+      ];
+      for (const item of supported) {
+        expect(isAllowedObstacle(item)).toBe(true);
+        expect(SUPPORTED_RELEVANT_OBJECT_ALLOWLIST).toContain(item);
+      }
+
+      // 2. Couch maps to Sofa, dining table maps to Table
+      expect(formatObstacleLabel('couch')).toBe('Sofa');
+      expect(formatObstacleLabel('sofa')).toBe('Sofa');
+      expect(formatObstacleLabel('dining table')).toBe('Table');
+
+      // 3. Documented unsupported classes in COCO SSD MobileNet v1
+      expect(UNSUPPORTED_REQUESTED_OBJECTS).toEqual(['desk', 'door', 'wall', 'stairs']);
+      for (const unsupp of UNSUPPORTED_REQUESTED_OBJECTS) {
+        expect(isAllowedObstacle(unsupp)).toBe(false);
+      }
+
+      // 4. Excluded classes outside allowlist
+      const excluded = ['dog', 'cat', 'tv', 'stop sign', 'fire hydrant', 'bench', 'bottle', 'laptop'];
+      for (const ex of excluded) {
+        expect(isAllowedObstacle(ex)).toBe(false);
+      }
+
+      // 5. Enforces 75% SSD MobileNet confidence threshold by default
+      expect(aiService.getConfidenceThreshold()).toBe(0.75);
+
+      // 6. Independent face confidence threshold preserved
+      expect(aiService.getFaceConfidenceThreshold()).toBe(0.60);
     });
   });
 

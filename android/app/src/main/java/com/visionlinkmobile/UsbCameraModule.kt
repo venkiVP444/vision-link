@@ -157,8 +157,9 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
                         Log.e(TAG, "[UVC] CameraHelper onError: ${e.message}", e)
                     }
                 })
+                registerCallback()
             }
-            Log.i(TAG, "[UVC] Native UVC CameraHelper initialized")
+            Log.i(TAG, "[UVC] Native UVC CameraHelper initialized and callback registered")
         } catch (e: Exception) {
             Log.e(TAG, "[UVC] Failed to initialize CameraHelper", e)
         }
@@ -283,11 +284,12 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
                     if (granted && device != null) {
                         handleCameraConnected(device)
                         try {
-                            cameraHelper?.selectDevice(device)
+                            if (cameraHelper?.isCameraOpened != true) {
+                                cameraHelper?.selectDevice(device)
+                            }
                         } catch (e: Exception) {
                             Log.e(TAG, "[UVC] Error selecting device after permission", e)
                         }
-                        openCameraHardware()
                     } else {
                         Log.w(TAG, "[OTG] USB Permission denied for device: ${device?.deviceName}")
                         cameraStatus = "permission_denied"
@@ -301,11 +303,12 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
                         if (usbManager.hasPermission(device)) {
                             handleCameraConnected(device)
                             try {
-                                cameraHelper?.selectDevice(device)
+                                if (cameraHelper?.isCameraOpened != true) {
+                                    cameraHelper?.selectDevice(device)
+                                }
                             } catch (e: Exception) {
                                 Log.e(TAG, "[UVC] Error selecting device on attached", e)
                             }
-                            openCameraHardware()
                         } else {
                             requestUsbPermission(device)
                         }
@@ -396,7 +399,9 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
             handleCameraConnected(uvcDevice)
             if (usbManager.hasPermission(uvcDevice)) {
                 try {
-                    cameraHelper?.selectDevice(uvcDevice)
+                    if (cameraHelper?.isCameraOpened != true) {
+                        cameraHelper?.selectDevice(uvcDevice)
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "[UVC] Error selecting initial device", e)
                 }
@@ -565,9 +570,8 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
         // Priority 1: Direct USB UVC Camera via CameraHelper
         val uvcDevice = getConnectedVideoDevice()
         if (uvcDevice != null) {
-            Log.i(TAG, "[UVC] Starting direct UVC stream for attached device: ${uvcDevice.deviceName}")
+            Log.i(TAG, "[UVC] Opening UVC camera device: ${uvcDevice.deviceName}")
             try {
-                cameraHelper?.selectDevice(uvcDevice)
                 if (cameraHelper?.isCameraOpened == true) {
                     cameraHelper?.startPreview()
                     isStreaming.set(true)
@@ -575,10 +579,7 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
                     emitStatusChanged(cameraStatus)
                     return true
                 }
-                // selectDevice triggered async connect callback
-                isStreaming.set(true)
-                cameraStatus = "streaming"
-                emitStatusChanged(cameraStatus)
+                cameraHelper?.selectDevice(uvcDevice)
                 return true
             } catch (e: Exception) {
                 Log.e(TAG, "[UVC] Error launching CameraHelper stream", e)
@@ -808,12 +809,13 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
             }
             handleCameraConnected(uvcDevice)
             try {
-                cameraHelper?.selectDevice(uvcDevice)
+                if (cameraHelper?.isCameraOpened != true) {
+                    cameraHelper?.selectDevice(uvcDevice)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "[UVC] Error selecting device in connectCamera", e)
             }
-            val opened = openCameraHardware()
-            promise.resolve(opened)
+            promise.resolve(true)
             return
         }
 
@@ -863,9 +865,6 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
                     return
                 } else {
                     cameraHelper?.selectDevice(uvcDevice)
-                    isStreaming.set(true)
-                    cameraStatus = "streaming"
-                    emitStatusChanged(cameraStatus)
                     promise.resolve(true)
                     return
                 }
@@ -952,6 +951,7 @@ class UsbCameraModule(private val reactContext: ReactApplicationContext) :
         }
         stopCameraCapture()
         try {
+            cameraHelper?.unregisterCallback()
             cameraHelper?.release()
         } catch (_: Exception) {}
         cameraHelper = null

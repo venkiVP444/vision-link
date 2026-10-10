@@ -214,8 +214,8 @@ export class AIService implements IAIService {
       detectedClass = 'dog';
     } else if (lowerFrame.includes('bench')) {
       detectedClass = 'bench';
-    } else if (lowerFrame.includes('couch')) {
-      detectedClass = 'couch';
+    } else if (lowerFrame.includes('couch') || lowerFrame.includes('sofa')) {
+      detectedClass = 'sofa';
     } else if (lowerFrame.includes('table') || lowerFrame.includes('dining table')) {
       detectedClass = 'dining table';
     } else if (lowerFrame.includes('bed')) {
@@ -240,7 +240,7 @@ export class AIService implements IAIService {
       detectedClass = 'unsupported';
     }
 
-    // If frame is clear or object is not in the exact 20-object allowlist, stay silent (0 obstacles)
+    // If frame is clear or object is not in the allowed relevant object allowlist, stay silent (0 obstacles)
     if (detectedClass === 'clear' || !isAllowedObstacle(detectedClass)) {
       console.log(
         `[EdgeAI]\n` +
@@ -270,20 +270,11 @@ export class AIService implements IAIService {
       bicycle: { label: 'Bicycle', classId: 1 },
       bus: { label: 'Bus', classId: 5 },
       truck: { label: 'Truck', classId: 7 },
-      dog: { label: 'Dog', classId: 17 },
-      bench: { label: 'Bench', classId: 14 },
-      couch: { label: 'Couch', classId: 62 },
+      couch: { label: 'Sofa', classId: 62 },
+      sofa: { label: 'Sofa', classId: 62 },
       'dining table': { label: 'Table', classId: 66 },
       table: { label: 'Table', classId: 66 },
       bed: { label: 'Bed', classId: 65 },
-      toilet: { label: 'Toilet', classId: 69 },
-      'potted plant': { label: 'Potted plant', classId: 63 },
-      backpack: { label: 'Backpack', classId: 26 },
-      umbrella: { label: 'Umbrella', classId: 27 },
-      suitcase: { label: 'Suitcase', classId: 32 },
-      tv: { label: 'TV', classId: 71 },
-      'stop sign': { label: 'Stop sign', classId: 12 },
-      'fire hydrant': { label: 'Fire hydrant', classId: 10 },
     };
 
     const mapped = mockClassMap[detectedClass];

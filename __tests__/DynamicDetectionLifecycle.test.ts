@@ -193,7 +193,7 @@ describe('Vision-Link Mobile — Dynamic TTS & Stale Detection State Lifecycle',
 
     // Also verify all allowed classes map directly to their exact class names and never to generic "Obstacle ahead"
     for (const allowed of ESSENTIAL_OBJECT_ALLOWLIST) {
-      if (allowed === 'dining table') continue; // dining table maps to Table
+      if (allowed === 'dining table' || allowed === 'couch') continue; // dining table maps to Table, couch maps to Sofa
       const warning = generateObstacleWarning(allowed);
       expect(warning).not.toContain('Obstacle');
       const enTranslation = ttsService.translateDetectionWarning(warning, 'en-US');

@@ -118,6 +118,10 @@ const ENGLISH_WARNING_MAP: Record<string, string> = {
   "Fire hydrant ahead. Be careful.": "Fire hydrant ahead. Be careful.",
   "Couch ahead, be careful": "Couch ahead, be careful",
   "Couch ahead. Be careful.": "Couch ahead. Be careful.",
+  "Sofa ahead, be careful": "Sofa ahead, be careful",
+  "Sofa ahead. Be careful.": "Sofa ahead. Be careful.",
+  "Sofa ahead.": "Sofa ahead.",
+  "Sofa ahead": "Sofa ahead.",
   "Bed ahead, be careful": "Bed ahead, be careful",
   "Bed ahead. Be careful.": "Bed ahead. Be careful.",
   "Toilet ahead, be careful": "Toilet ahead, be careful",
@@ -184,6 +188,10 @@ const HAUSA_WARNING_MAP: Record<string, string> = {
   "Fire hydrant ahead. Be careful.": "Akwai famfon kashe gobara a gabanka, ka kula.",
   "Couch ahead, be careful": "Akwai kujerar zama a gabanka, ka kula.",
   "Couch ahead. Be careful.": "Akwai kujerar zama a gabanka, ka kula.",
+  "Sofa ahead, be careful": "Akwai kujerar zama a gabanka, ka kula.",
+  "Sofa ahead. Be careful.": "Akwai kujerar zama a gabanka, ka kula.",
+  "Sofa ahead.": "Akwai kujerar zama a gabanka, ka kula.",
+  "Sofa ahead": "Akwai kujerar zama a gabanka, ka kula.",
   "Bed ahead, be careful": "Akwai gado a gabanka, ka kula.",
   "Bed ahead. Be careful.": "Akwai gado a gabanka, ka kula.",
   "Toilet ahead, be careful": "Akwai bayan gida a gabanka, ka kula.",
@@ -276,6 +284,10 @@ const ARABIC_WARNING_MAP: Record<string, string> = {
   "Fire hydrant ahead. Be careful.": "يوجد صنبور إطفاء أمامك. يرجى توخي الحذر.",
   "Couch ahead, be careful": "توجد أريكة أمامك. يرجى توخي الحذر.",
   "Couch ahead. Be careful.": "توجد أريكة أمامك. يرجى توخي الحذر.",
+  "Sofa ahead, be careful": "توجد أريكة أمامك. يرجى توخي الحذر.",
+  "Sofa ahead. Be careful.": "توجد أريكة أمامك. يرجى توخي الحذر.",
+  "Sofa ahead.": "توجد أريكة أمامك.",
+  "Sofa ahead": "توجد أريكة أمامك.",
   "Bed ahead, be careful": "يوجد سرير أمامك. يرجى توخي الحذر.",
   "Bed ahead. Be careful.": "يوجد سرير أمامك. يرجى توخي الحذر.",
   "Toilet ahead, be careful": "يوجد مرحاض أمامك. يرجى توخي الحذر.",
@@ -368,6 +380,10 @@ const HINDI_WARNING_MAP: Record<string, string> = {
   "Fire hydrant ahead. Be careful.": "सामने फायर हाइड्रेंट है। कृपया सावधान रहें।",
   "Couch ahead, be careful": "सामने सोफा है। कृपया सावधान रहें।",
   "Couch ahead. Be careful.": "सामने सोफा है। कृपया सावधान रहें।",
+  "Sofa ahead, be careful": "सामने सोफा है। कृपया सावधान रहें।",
+  "Sofa ahead. Be careful.": "सामने सोफा है। कृपया सावधान रहें।",
+  "Sofa ahead.": "सामने सोफा है।",
+  "Sofa ahead": "सामने सोफा है।",
   "Bed ahead, be careful": "सामने बिस्तर है। कृपया सावधान रहें।",
   "Bed ahead. Be careful.": "सामने बिस्तर है। कृपया सावधान रहें।",
   "Toilet ahead, be careful": "सामने शौचालय है। कृपया सावधान रहें।",
@@ -670,7 +686,7 @@ export class TTSService implements ITTSService {
       if (lower.includes('dog')) return 'Akwai kare a gabanka, ka kula.';
       if (lower.includes('stop sign')) return 'Akwai alamar tsayawa a gabanka, ka kula.';
       if (lower.includes('fire hydrant')) return 'Akwai famfon kashe gobara a gabanka, ka kula.';
-      if (lower.includes('couch')) return 'Akwai kujerar zama a gabanka, ka kula.';
+      if (lower.includes('couch') || lower.includes('sofa')) return 'Akwai kujerar zama a gabanka, ka kula.';
       if (lower.includes('bed')) return 'Akwai gado a gabanka, ka kula.';
       if (lower.includes('toilet')) return 'Akwai bayan gida a gabanka, ka kula.';
       if (lower.includes('plant')) return 'Akwai shuka a gabanka, ka kula.';
@@ -727,7 +743,7 @@ export class TTSService implements ITTSService {
       if (lower.includes('dog')) return 'يوجد كلب أمامك. يرجى توخي الحذر.';
       if (lower.includes('stop sign')) return 'توجد إشارة توقف أمامك. يرجى توخي الحذر.';
       if (lower.includes('fire hydrant')) return 'يوجد صنبور إطفاء أمامك. يرجى توخي الحذر.';
-      if (lower.includes('couch')) return 'توجد أريكة أمامك. يرجى توخي الحذر.';
+      if (lower.includes('couch') || lower.includes('sofa')) return 'توجد أريكة أمامك. يرجى توخي الحذر.';
       if (lower.includes('bed')) return 'يوجد سرير أمامك. يرجى توخي الحذر.';
       if (lower.includes('toilet')) return 'يوجد مرحاض أمامك. يرجى توخي الحذر.';
       if (lower.includes('plant')) return 'توجد نبتة أمامك. يرجى توخي الحذر.';
@@ -783,7 +799,7 @@ export class TTSService implements ITTSService {
       if (lower.includes('dog')) return 'सामने कुत्ता है। कृपया सावधान रहें।';
       if (lower.includes('stop sign')) return 'सामने स्टॉप का संकेत है। कृपया सावधान रहें।';
       if (lower.includes('fire hydrant')) return 'सामने फायर हाइड्रेंट है। कृपया सावधान रहें।';
-      if (lower.includes('couch')) return 'सामने सोफा है। कृपया सावधान रहें।';
+      if (lower.includes('couch') || lower.includes('sofa')) return 'सामने सोफा है। कृपया सावधान रहें।';
       if (lower.includes('bed')) return 'सामने बिस्तर है। कृपया सावधान रहें।';
       if (lower.includes('toilet')) return 'सामने शौचालय है। कृपया सावधान रहें।';
       if (lower.includes('plant')) return 'सामने गमला है। कृपया सावधान रहें।';

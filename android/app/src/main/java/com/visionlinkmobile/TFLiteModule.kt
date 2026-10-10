@@ -30,10 +30,8 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
 
         val ESSENTIAL_OBJECT_ALLOWLIST = setOf(
             "person", "car", "motorcycle", "bicycle", "bus", "truck",
-            "traffic light", "fire hydrant", "stop sign", "bench", "dog",
             "chair", "couch", "sofa",
-            "dining table", "table", "bed", "toilet", "potted plant",
-            "backpack", "umbrella", "suitcase", "tv"
+            "dining table", "table", "bed"
         )
     }
 
@@ -336,11 +334,7 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                     val isAllowed = ESSENTIAL_OBJECT_ALLOWLIST.contains(rawLabel.lowercase())
                     val displayLabel = when (rawLabel.lowercase()) {
                         "dining table", "table" -> "Table"
-                        "tv" -> "TV"
-                        "stop sign" -> "Stop sign"
-                        "fire hydrant" -> "Fire hydrant"
-                        "traffic light" -> "Traffic light"
-                        "potted plant" -> "Potted plant"
+                        "couch", "sofa" -> "Sofa"
                         else -> rawLabel.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }
                     }
                     val itemWarning = if (isAllowed) "$displayLabel ahead, be careful" else "None"
