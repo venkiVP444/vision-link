@@ -8,26 +8,31 @@
  */
 
 import { NativeModules, Platform } from 'react-native';
-import { DetectionResult, DetectedObject, ModelInfo } from '../../types';
+import { DetectionResult, DetectedObject, ModelInfo, DetectedFace, FaceDetectionResult } from '../../types';
 import { cameraService, FramePayload } from '../camera/cameraService';
 import { isAllowedObstacle, formatObstacleLabel, generateObstacleWarning } from './objectFilter';
 
-const { TFLiteModule } = NativeModules;
+const { TFLiteModule, FaceDetectorModule } = NativeModules;
 
 export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
+export const DEFAULT_FACE_CONFIDENCE_THRESHOLD = 0.60;
 
 export interface IAIService {
   detectObjectsFromFrame(frameData?: string | FramePayload, confidenceThreshold?: number): Promise<DetectionResult>;
+  detectFacesFromFrame(frameData?: string | FramePayload, confidenceThreshold?: number): Promise<FaceDetectionResult>;
   getModelInfo(): Promise<ModelInfo | null>;
   isModelLoaded(): Promise<boolean>;
   loadModel(): Promise<boolean>;
   getMockDetections(): DetectedObject[];
   getConfidenceThreshold(): number;
   setConfidenceThreshold(threshold: number): void;
+  getFaceConfidenceThreshold(): number;
+  setFaceConfidenceThreshold(threshold: number): void;
 }
 
 export class AIService implements IAIService {
   private confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD;
+  private faceConfidenceThreshold: number = DEFAULT_FACE_CONFIDENCE_THRESHOLD;
 
   getConfidenceThreshold(): number {
     return this.confidenceThreshold;
@@ -36,6 +41,16 @@ export class AIService implements IAIService {
   setConfidenceThreshold(threshold: number): void {
     if (typeof threshold === 'number' && !isNaN(threshold) && threshold >= 0 && threshold <= 1) {
       this.confidenceThreshold = threshold;
+    }
+  }
+
+  getFaceConfidenceThreshold(): number {
+    return this.faceConfidenceThreshold;
+  }
+
+  setFaceConfidenceThreshold(threshold: number): void {
+    if (typeof threshold === 'number' && !isNaN(threshold) && threshold >= 0 && threshold <= 1) {
+      this.faceConfidenceThreshold = threshold;
     }
   }
 
@@ -389,6 +404,122 @@ export class AIService implements IAIService {
 
   getMockDetections(): DetectedObject[] {
     return [...this.mockObjects];
+  }
+
+  /**
+   * Performs 100% offline on-device face detection using MediaPipe Face Detector.
+   * Runs independently from SSD MobileNet object detection.
+   */
+  async detectFacesFromFrame(
+    frameData?: string | FramePayload,
+    confidenceThreshold: number = this.faceConfidenceThreshold
+  ): Promise<FaceDetectionResult> {
+    const rawFrame = typeof frameData === 'string' ? frameData : frameData?.data;
+    if (!rawFrame || rawFrame.trim().length === 0) {
+      return {
+        status: 'error',
+        faces: [],
+        warning: null,
+        errorMessage: 'Invalid or missing camera frame.',
+        timestamp: Date.now(),
+      };
+    }
+
+    if (Platform.OS === 'android' && FaceDetectorModule?.detectFaces) {
+      try {
+        const inferenceTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Face detection inference timed out after 3500ms')), 3500)
+        );
+        const result: any = await Promise.race([
+          FaceDetectorModule.detectFaces(frameData, confidenceThreshold),
+          inferenceTimeout,
+        ]);
+
+        const rawFaces: DetectedFace[] = (result.faces || []).map((f: any) => ({
+          confidence: f.confidence,
+          position: f.position || 'ahead',
+          boundingBox: {
+            x: f.boundingBox?.x ?? 0,
+            y: f.boundingBox?.y ?? 0,
+            width: f.boundingBox?.width ?? 0,
+            height: f.boundingBox?.height ?? 0,
+            ymin: f.boundingBox?.ymin,
+            xmin: f.boundingBox?.xmin,
+            ymax: f.boundingBox?.ymax,
+            xmax: f.boundingBox?.xmax,
+          },
+        }));
+
+        const validFaces = rawFaces.filter((f) => f.confidence >= confidenceThreshold);
+        const warning = validFaces.length > 0 ? (result.warning || 'Face ahead, be careful') : null;
+
+        return {
+          status: validFaces.length > 0 ? 'success' : 'no-face',
+          faces: validFaces,
+          warning,
+          inferenceTimeMs: result.inferenceTimeMs,
+          timestamp: result.timestamp || Date.now(),
+          model: result.model || 'MediaPipe BlazeFace (100% Offline)',
+        };
+      } catch (err: any) {
+        console.error('[OfflineFaceAI] Native face detection failed:', err?.message || err);
+        return {
+          status: 'error',
+          faces: [],
+          warning: null,
+          errorMessage: err?.message || 'On-device face detection failure.',
+          timestamp: Date.now(),
+        };
+      }
+    }
+
+    // Simulation / unit-testing fallback for non-Android environments
+    const lowerFrame = rawFrame.toLowerCase();
+    if (lowerFrame.includes('face')) {
+      let simConfidence = 0.88;
+      const confMatch = lowerFrame.match(/face_conf(?:idence)?_?([0-9.]+)/) || lowerFrame.match(/conf(?:idence)?_?([0-9.]+)/);
+      if (confMatch) {
+        const parsed = parseFloat(confMatch[1]);
+        if (!isNaN(parsed)) {
+          simConfidence = parsed;
+        }
+      }
+
+      if (simConfidence < confidenceThreshold) {
+        return {
+          status: 'no-face',
+          faces: [],
+          warning: null,
+          inferenceTimeMs: 15,
+          timestamp: Date.now(),
+          model: 'MediaPipe BlazeFace (Simulation)',
+        };
+      }
+
+      const mockFace: DetectedFace = {
+        confidence: simConfidence,
+        position: 'ahead',
+        boundingBox: { x: 100, y: 60, width: 120, height: 140 },
+      };
+
+      return {
+        status: 'success',
+        faces: [mockFace],
+        warning: 'Face ahead, be careful',
+        inferenceTimeMs: 18,
+        timestamp: Date.now(),
+        model: 'MediaPipe BlazeFace (Simulation)',
+      };
+    }
+
+    return {
+      status: 'no-face',
+      faces: [],
+      warning: null,
+      inferenceTimeMs: 12,
+      timestamp: Date.now(),
+      model: 'MediaPipe BlazeFace (Simulation)',
+    };
   }
 }
 

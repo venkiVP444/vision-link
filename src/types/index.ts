@@ -38,6 +38,22 @@ export interface DetectionResult {
   timestamp: number;
 }
 
+export interface DetectedFace {
+  confidence: number;
+  boundingBox?: BoundingBox;
+  position?: SpatialPosition;
+}
+
+export interface FaceDetectionResult {
+  status: 'success' | 'no-face' | 'error';
+  faces: DetectedFace[];
+  warning: string | null;
+  inferenceTimeMs?: number;
+  model?: string;
+  errorMessage?: string;
+  timestamp: number;
+}
+
 export interface ModelInfo {
   isLoaded: boolean;
   modelName: string;

@@ -200,6 +200,78 @@ describe('Vision-Link Service Layer', () => {
     });
   });
 
+  describe('Offline Face Detection Pipeline (MediaPipe BlazeFace)', () => {
+    beforeEach(() => {
+      aiService.setFaceConfidenceThreshold(0.60);
+    });
+
+    it('defaults to 0.60 (60%) face confidence threshold', () => {
+      expect(aiService.getFaceConfidenceThreshold()).toBe(0.60);
+    });
+
+    it('detects a visible face independently of person detection', async () => {
+      // Frame with face only
+      const faceResult = await aiService.detectFacesFromFrame('FRAME_FACE_DATA');
+      expect(faceResult.status).toBe('success');
+      expect(faceResult.faces.length).toBe(1);
+      expect(faceResult.faces[0].confidence).toBeGreaterThanOrEqual(0.60);
+      expect(faceResult.warning).toBe('Face ahead, be careful');
+    });
+
+    it('returns no-face cleanly when no face is visible', async () => {
+      const result = await aiService.detectFacesFromFrame('FRAME_EMPTY_DATA');
+      expect(result.status).toBe('no-face');
+      expect(result.faces.length).toBe(0);
+      expect(result.warning).toBeNull();
+    });
+
+    it('filters out face detections strictly below threshold (e.g. 0.50 < 0.60)', async () => {
+      const result = await aiService.detectFacesFromFrame('FRAME_FACE_CONF_0.50', 0.60);
+      expect(result.status).toBe('no-face');
+      expect(result.faces.length).toBe(0);
+      expect(result.warning).toBeNull();
+    });
+
+    it('accepts face detections meeting or exceeding threshold (e.g. 0.60 and 0.85)', async () => {
+      const exactResult = await aiService.detectFacesFromFrame('FRAME_FACE_CONF_0.60', 0.60);
+      expect(exactResult.status).toBe('success');
+      expect(exactResult.faces.length).toBe(1);
+      expect(exactResult.faces[0].confidence).toBe(0.60);
+
+      const aboveResult = await aiService.detectFacesFromFrame('FRAME_FACE_CONF_0.85', 0.60);
+      expect(aboveResult.status).toBe('success');
+      expect(aboveResult.faces.length).toBe(1);
+      expect(aboveResult.faces[0].confidence).toBe(0.85);
+    });
+
+    it('translates face announcements across English, Hausa, Arabic, and Hindi offline TTS', () => {
+      const en = ttsService.translateDetectionWarning('Face ahead, be careful', 'en-GB');
+      expect(en).toContain('Face');
+
+      const ha = ttsService.translateDetectionWarning('Face ahead, be careful', 'ha-NG');
+      expect(ha).toContain('fuska');
+
+      const ar = ttsService.translateDetectionWarning('Face ahead, be careful', 'ar');
+      expect(ar).toContain('وجه');
+
+      const hi = ttsService.translateDetectionWarning('Face ahead, be careful', 'hi-IN');
+      expect(hi).toContain('चेहरा');
+    });
+
+    it('runs face detection and person detection as completely separate results', async () => {
+      // In a frame with a face but no body (e.g. close-up face), face is detected
+      const faceResult = await aiService.detectFacesFromFrame('FRAME_FACE_DATA');
+      expect(faceResult.status).toBe('success');
+      expect(faceResult.faces.length).toBe(1);
+
+      // Person detection with 75% threshold operates independently
+      const objResult = await aiService.detectObjectsFromFrame('FRAME_PERSON_DATA', 0.75);
+      expect(objResult.status).toBe('success');
+      expect(objResult.objects?.[0]?.label).toBe('Person');
+      expect(objResult.objects?.[0]?.confidence).toBeGreaterThanOrEqual(0.75);
+    });
+  });
+
   describe('NavigationService', () => {
     it('manages walking route lifecycle and step progression', async () => {
       expect(navigationService.getStatus()).toBe('idle');

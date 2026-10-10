@@ -41,7 +41,12 @@ export const ObjectDetectionScreen: React.FC = () => {
     warning: null,
     timestamp: 0,
   });
+  const lastFaceSpokenRef = useRef<{ warning: string | null; timestamp: number }>({
+    warning: null,
+    timestamp: 0,
+  });
   const isProcessingRef = useRef<boolean>(false);
+  const isFaceProcessingRef = useRef<boolean>(false);
   const prevCamStatusRef = useRef<CameraStatus>(cameraService.getStatus());
 
   useEffect(() => {
@@ -59,6 +64,8 @@ export const ObjectDetectionScreen: React.FC = () => {
         // - Clear queued/stale announcements
         ttsService.stopSpeaking();
         lastSpokenRef.current = { warning: null, timestamp: 0 };
+        lastFaceSpokenRef.current = { warning: null, timestamp: 0 };
+        isFaceProcessingRef.current = false;
         setWarningText(null);
         setDetectedObjects([]);
         setDisplayState('idle');
@@ -99,6 +106,8 @@ export const ObjectDetectionScreen: React.FC = () => {
       unsubCam();
       ttsService.stopSpeaking();
       lastSpokenRef.current = { warning: null, timestamp: 0 };
+      lastFaceSpokenRef.current = { warning: null, timestamp: 0 };
+      isFaceProcessingRef.current = false;
     };
   }, []);
 
@@ -155,6 +164,38 @@ export const ObjectDetectionScreen: React.FC = () => {
     }
   };
 
+  const runIndependentFaceDetection = async (framePayload: any) => {
+    if (isFaceProcessingRef.current) return;
+    isFaceProcessingRef.current = true;
+    try {
+      const faceResult = await aiService.detectFacesFromFrame(framePayload);
+      if (faceResult.status === 'success' && faceResult.faces.length > 0) {
+        const now = Date.now();
+        const faceWarning = faceResult.warning || 'Face ahead, be careful';
+        const isSameWarning = lastFaceSpokenRef.current.warning === faceWarning;
+        const cooldownElapsed = now - lastFaceSpokenRef.current.timestamp > 10000;
+
+        // Announce when face appears OR after 10s cooldown for continuously visible face
+        if (!isSameWarning || cooldownElapsed) {
+          lastFaceSpokenRef.current = { warning: faceWarning, timestamp: now };
+          const prefs = ttsService.getPreferences();
+          if (prefs.autoAnnounceDetections && !ttsService.isSpeaking()) {
+            const spokenFace = ttsService.translateDetectionWarning(faceWarning, prefs.language);
+            console.log(`[OfflineFaceAI] Spoken face announcement: "${spokenFace}"`);
+            await ttsService.speak(spokenFace);
+          }
+        }
+      } else if (faceResult.status === 'no-face') {
+        // Face is no longer in view; reset so reappearance triggers immediate announcement
+        lastFaceSpokenRef.current = { warning: null, timestamp: 0 };
+      }
+    } catch (faceErr) {
+      console.warn('[OfflineFaceAI] Face detection cycle warning:', faceErr);
+    } finally {
+      isFaceProcessingRef.current = false;
+    }
+  };
+
   const executeDetectionCycle = async () => {
     if (isProcessingRef.current) {
       return;
@@ -187,6 +228,9 @@ export const ObjectDetectionScreen: React.FC = () => {
       if (displayState === 'idle') {
         setDisplayState('processing');
       }
+
+      // Trigger independent face detection on the exact same frame without blocking object detection
+      runIndependentFaceDetection(frame);
 
       const result = await aiService.detectObjectsFromFrame(frame, aiService.getConfidenceThreshold());
 

@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class TFLitePackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(TFLiteModule(reactContext))
+        return listOf(TFLiteModule(reactContext), FaceDetectorModule(reactContext))
     }
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {

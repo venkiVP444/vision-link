@@ -132,6 +132,7 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
     implementation("com.herohan:UVCAndroid:1.0.13")
 
     if (hermesEnabled.toBoolean()) {

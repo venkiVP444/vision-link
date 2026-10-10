@@ -134,6 +134,12 @@ const ENGLISH_WARNING_MAP: Record<string, string> = {
   "TV ahead. Be careful.": "TV ahead. Be careful.",
   "Obstacle ahead.": "Obstacle ahead. Please proceed carefully.",
   "Obstacle ahead": "Obstacle ahead. Please proceed carefully.",
+  "Face ahead, be careful": "Face ahead, be careful",
+  "Face ahead. Be careful.": "Face ahead. Be careful.",
+  "Face ahead.": "Face ahead.",
+  "Face ahead": "Face ahead.",
+  "Face on your left": "Face on your left",
+  "Face on your right": "Face on your right",
   "Warning: Person ahead.": "Warning: Person ahead.",
   "Warning: Obstacle ahead.": "Warning: Obstacle ahead.",
   "Obstacle warning: Person ahead.": "Warning: Person ahead.",
@@ -192,6 +198,12 @@ const HAUSA_WARNING_MAP: Record<string, string> = {
   "Suitcase ahead. Be careful.": "Akwai akwati a gabanka, ka kula.",
   "TV ahead, be careful": "Akwai talabijin a gabanka, ka kula.",
   "TV ahead. Be careful.": "Akwai talabijin a gabanka, ka kula.",
+  "Face ahead, be careful": "Akwai fuska a gabanka, ka kula.",
+  "Face ahead. Be careful.": "Akwai fuska a gabanka, ka kula.",
+  "Face ahead.": "Akwai fuska a gabanka, ka kula.",
+  "Face ahead": "Akwai fuska a gabanka, ka kula.",
+  "Face on your left": "Akwai fuska a hagunka.",
+  "Face on your right": "Akwai fuska a damanka.",
   "Obstacle ahead.": "Akwai cikas a gabanka, ka kula.",
   "Obstacle ahead": "Akwai cikas a gabanka, ka kula.",
   "Obstacle ahead. Please proceed carefully.": "Akwai cikas a gabanka, ka kula.",
@@ -278,6 +290,12 @@ const ARABIC_WARNING_MAP: Record<string, string> = {
   "Suitcase ahead. Be careful.": "توجد حقيبة سفر أمامك. يرجى توخي الحذر.",
   "TV ahead, be careful": "يوجد تلفاز أمامك. يرجى توخي الحذر.",
   "TV ahead. Be careful.": "يوجد تلفاز أمامك. يرجى توخي الحذر.",
+  "Face ahead, be careful": "يوجد وجه أمامك. يرجى توخي الحذر.",
+  "Face ahead. Be careful.": "يوجد وجه أمامك. يرجى توخي الحذر.",
+  "Face ahead.": "يوجد وجه أمامك.",
+  "Face ahead": "يوجد وجه أمامك.",
+  "Face on your left": "يوجد وجه على يسارك.",
+  "Face on your right": "يوجد وجه على يمينك.",
   "Obstacle ahead.": "يوجد عائق أمامك. يرجى التقدم بحذر.",
   "Obstacle ahead": "يوجد عائق أمامك. يرجى التقدم بحذر.",
   "Obstacle ahead. Please proceed carefully.": "يوجد عائق أمامك. يرجى التقدم بحذر.",
@@ -364,6 +382,12 @@ const HINDI_WARNING_MAP: Record<string, string> = {
   "Suitcase ahead. Be careful.": "सामने सूटकेस है। कृपया सावधान रहें।",
   "TV ahead, be careful": "सामने टीवी है। कृपया सावधान रहें।",
   "TV ahead. Be careful.": "सामने टीवी है। कृपया सावधान रहें।",
+  "Face ahead, be careful": "सामने चेहरा है। कृपया सावधान रहें।",
+  "Face ahead. Be careful.": "सामने चेहरा है। कृपया सावधान रहें।",
+  "Face ahead.": "सामने चेहरा है।",
+  "Face ahead": "सामने चेहरा है।",
+  "Face on your left": "बाईं ओर चेहरा है।",
+  "Face on your right": "दाईं ओर चेहरा है।",
   "Obstacle ahead.": "आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Obstacle ahead": "आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
   "Obstacle ahead. Please proceed carefully.": "आगे रुकावट है। कृपया सावधानी से आगे बढ़ें।",
@@ -633,6 +657,7 @@ export class TTSService implements ITTSService {
       }
 
       const lower = trimmed.toLowerCase();
+      if (lower.includes('face') || lower.includes('fuska')) return 'Akwai fuska a gabanka, ka kula.';
       if (lower.includes('person')) return 'Akwai mutum a gabanka, ka kula.';
       if (lower.includes('car')) return 'Akwai mota a gabanka, ka kula.';
       if (lower.includes('chair')) return 'Akwai kujera a gabanka, ka kula.';
@@ -689,6 +714,7 @@ export class TTSService implements ITTSService {
       }
 
       const lower = trimmed.toLowerCase();
+      if (lower.includes('face') || lower.includes('وجه')) return 'يوجد وجه أمامك. يرجى توخي الحذر.';
       if (lower.includes('person')) return 'يوجد شخص أمامك. يرجى توخي الحذر.';
       if (lower.includes('car')) return 'توجد سيارة أمامك. يرجى توخي الحذر.';
       if (lower.includes('chair')) return 'توجد كرسي أمامك. يرجى توخي الحذر.';
@@ -744,6 +770,7 @@ export class TTSService implements ITTSService {
       }
 
       const lower = trimmed.toLowerCase();
+      if (lower.includes('face') || lower.includes('चेहरा')) return 'सामने चेहरा है। कृपया सावधान रहें।';
       if (lower.includes('person')) return 'सामने व्यक्ति है। कृपया सावधान रहें।';
       if (lower.includes('car')) return 'सामने गाड़ी है। कृपया सावधान रहें।';
       if (lower.includes('chair')) return 'सामने कुर्सी है। कृपया सावधान रहें।';
