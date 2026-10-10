@@ -97,8 +97,10 @@ export class CameraService implements ICameraService {
           this.setStatus('connected');
           return info;
         }
+        return null;
       } catch (e) {
         console.warn('[CameraService] Native detectCamera error:', e);
+        return null;
       }
     }
 
@@ -122,8 +124,10 @@ export class CameraService implements ICameraService {
           this.setStatus('connected');
           return true;
         }
+        return false;
       } catch (e) {
         console.warn('[CameraService] Native connectCamera error:', e);
+        return false;
       }
     }
 
@@ -153,8 +157,10 @@ export class CameraService implements ICameraService {
           this.setStatus('streaming');
           return true;
         }
+        return false;
       } catch (e) {
         console.warn('[CameraService] Native startStream error:', e);
+        return false;
       }
     }
 

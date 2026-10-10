@@ -14,15 +14,31 @@ import { isAllowedObstacle, formatObstacleLabel, generateObstacleWarning } from 
 
 const { TFLiteModule } = NativeModules;
 
+export const DEFAULT_CONFIDENCE_THRESHOLD = 0.75;
+
 export interface IAIService {
   detectObjectsFromFrame(frameData?: string | FramePayload, confidenceThreshold?: number): Promise<DetectionResult>;
   getModelInfo(): Promise<ModelInfo | null>;
   isModelLoaded(): Promise<boolean>;
   loadModel(): Promise<boolean>;
   getMockDetections(): DetectedObject[];
+  getConfidenceThreshold(): number;
+  setConfidenceThreshold(threshold: number): void;
 }
 
 export class AIService implements IAIService {
+  private confidenceThreshold: number = DEFAULT_CONFIDENCE_THRESHOLD;
+
+  getConfidenceThreshold(): number {
+    return this.confidenceThreshold;
+  }
+
+  setConfidenceThreshold(threshold: number): void {
+    if (typeof threshold === 'number' && !isNaN(threshold) && threshold >= 0 && threshold <= 1) {
+      this.confidenceThreshold = threshold;
+    }
+  }
+
   private mockObjects: DetectedObject[] = [
     {
       label: 'Person',
@@ -71,7 +87,7 @@ export class AIService implements IAIService {
    */
   async detectObjectsFromFrame(
     frameData?: string | FramePayload,
-    confidenceThreshold: number = 0.50
+    confidenceThreshold: number = this.confidenceThreshold
   ): Promise<DetectionResult> {
     const rawFrame = typeof frameData === 'string' ? frameData : frameData?.data;
     if (!rawFrame || rawFrame.trim().length === 0) {
@@ -87,7 +103,13 @@ export class AIService implements IAIService {
 
     if (Platform.OS === 'android' && TFLiteModule?.detectObjects) {
       try {
-        const result = await TFLiteModule.detectObjects(frameData, confidenceThreshold);
+        const inferenceTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('TFLite inference timed out after 3500ms')), 3500)
+        );
+        const result: any = await Promise.race([
+          TFLiteModule.detectObjects(frameData, confidenceThreshold),
+          inferenceTimeout,
+        ]);
 
         const rawObjects: DetectedObject[] = (result.objects || []).map((obj: any) => ({
           label: formatObstacleLabel(obj.label),
@@ -106,8 +128,10 @@ export class AIService implements IAIService {
           },
         }));
 
-        // Filter against essential object allowlist
-        const validObjects = rawObjects.filter((obj) => isAllowedObstacle(obj.label));
+        // Filter against essential object allowlist and active confidence threshold
+        const validObjects = rawObjects.filter(
+          (obj) => isAllowedObstacle(obj.label) && obj.confidence >= confidenceThreshold
+        );
 
         // Required debug logging
         validObjects.forEach((obj) => {
@@ -247,21 +271,62 @@ export class AIService implements IAIService {
       'fire hydrant': { label: 'Fire hydrant', classId: 10 },
     };
 
-    const mapped = mockClassMap[detectedClass] || { label: formatObstacleLabel(detectedClass), classId: 0 };
+    const mapped = mockClassMap[detectedClass];
+    if (!mapped) {
+      return {
+        status: 'success',
+        warning: null,
+        objects: [],
+        inferenceTimeMs: 20,
+        model: 'SSD MobileNet v1 (100% Offline)',
+        timestamp: Date.now(),
+      };
+    }
+    let simConfidence = 0.92;
+    const confMatch = lowerFrame.match(/conf(?:idence)?_?([0-9.]+)/);
+    if (confMatch) {
+      const parsed = parseFloat(confMatch[1]);
+      if (!isNaN(parsed)) {
+        simConfidence = parsed;
+      }
+    }
+
     const primaryMock: DetectedObject = {
       label: mapped.label,
       classId: mapped.classId,
-      confidence: 0.92,
+      confidence: simConfidence,
       boundingBox: { x: 120, y: 80, width: 240, height: 420 },
       distance: 1.8,
       position: 'ahead',
     };
+
+    if (primaryMock.confidence < confidenceThreshold) {
+      console.log(
+        `[EdgeAI]\n` +
+        `Class ID: ${mapped.classId}\n` +
+        `Confidence: ${primaryMock.confidence.toFixed(2)}\n` +
+        `Label: ${mapped.label.toLowerCase()}\n` +
+        `Allowed: true (suppressed: confidence < ${confidenceThreshold.toFixed(2)})\n` +
+        `Warning: None\n` +
+        `TTS: None\n` +
+        `Camera Connection State: ${cameraState}`
+      );
+      return {
+        status: 'success',
+        warning: null,
+        objects: [],
+        inferenceTimeMs: 20,
+        model: 'SSD MobileNet v1 (100% Offline)',
+        timestamp: Date.now(),
+      };
+    }
+
     const simWarning = generateObstacleWarning(mapped.label);
 
     console.log(
       `[EdgeAI]\n` +
       `Class ID: ${mapped.classId}\n` +
-      `Confidence: 0.92\n` +
+      `Confidence: ${primaryMock.confidence.toFixed(2)}\n` +
       `Label: ${mapped.label.toLowerCase()}\n` +
       `Allowed: true\n` +
       `Warning: ${simWarning}\n` +

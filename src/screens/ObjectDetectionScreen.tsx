@@ -146,9 +146,13 @@ export const ObjectDetectionScreen: React.FC = () => {
   };
 
   const handleConnectCamera = async () => {
-    await cameraService.requestCameraPermission();
-    await cameraService.connectCamera();
-    await cameraService.startStream();
+    const granted = await cameraService.requestCameraPermission();
+    if (granted) {
+      const connected = await cameraService.connectCamera();
+      if (connected) {
+        await cameraService.startStream();
+      }
+    }
   };
 
   const executeDetectionCycle = async () => {
@@ -173,7 +177,10 @@ export const ObjectDetectionScreen: React.FC = () => {
       const frame = await cameraService.captureFrame();
 
       if (!frame) {
-        // No fresh frame available yet from ImageReader; return cleanly without locking UI in loading state
+        // No fresh frame available yet from ImageReader; reset state so UI does not stay in loading or retain stale clear path
+        if (displayState === 'processing' || displayState === 'capturing' || displayState === 'no-warning') {
+          setDisplayState('idle');
+        }
         return;
       }
 
@@ -181,7 +188,7 @@ export const ObjectDetectionScreen: React.FC = () => {
         setDisplayState('processing');
       }
 
-      const result = await aiService.detectObjectsFromFrame(frame, 0.50);
+      const result = await aiService.detectObjectsFromFrame(frame, aiService.getConfidenceThreshold());
 
       if (result.status === 'error') {
         setDisplayState('error');
@@ -303,7 +310,7 @@ export const ObjectDetectionScreen: React.FC = () => {
           </View>
         </View>
 
-        {cameraStatus === 'disconnected' ? (
+        {cameraStatus !== 'connected' && cameraStatus !== 'streaming' ? (
           <AccessibleButton
             title="Connect External Camera"
             subtitle="Connects external UVC wide-angle camera"

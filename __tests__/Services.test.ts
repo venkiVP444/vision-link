@@ -148,6 +148,58 @@ describe('Vision-Link Service Layer', () => {
     });
   });
 
+  describe('Confidence Threshold Enforcement (0.75 / 75% default)', () => {
+    beforeEach(() => {
+      aiService.setConfidenceThreshold(0.75);
+    });
+
+    it('defaults to 0.75 (75%) confidence threshold', () => {
+      expect(aiService.getConfidenceThreshold()).toBe(0.75);
+    });
+
+    it('filters detections strictly below threshold (e.g. 0.70 < 0.75), yielding no objects and no warnings', async () => {
+      const result = await aiService.detectObjectsFromFrame('FRAME_PERSON_CONF_0.70', 0.75);
+      expect(result.status).toBe('success');
+      expect(result.objects?.length).toBe(0);
+      expect(result.warning).toBeNull();
+    });
+
+    it('preserves detections equal to threshold (e.g. 0.75 == 0.75), generating object warnings and announcements', async () => {
+      const result = await aiService.detectObjectsFromFrame('FRAME_PERSON_CONF_0.75', 0.75);
+      expect(result.status).toBe('success');
+      expect(result.objects?.length).toBe(1);
+      expect(result.objects?.[0]?.confidence).toBe(0.75);
+      expect(result.warning).toBe('Person ahead, be careful');
+    });
+
+    it('preserves detections above threshold (e.g. 0.90 > 0.75), generating object warnings and announcements', async () => {
+      const result = await aiService.detectObjectsFromFrame('FRAME_PERSON_CONF_0.90', 0.75);
+      expect(result.status).toBe('success');
+      expect(result.objects?.length).toBe(1);
+      expect(result.objects?.[0]?.confidence).toBe(0.90);
+      expect(result.warning).toBe('Person ahead, be careful');
+    });
+
+    it('supports dynamic configurable threshold via setConfidenceThreshold', async () => {
+      aiService.setConfidenceThreshold(0.85);
+      expect(aiService.getConfidenceThreshold()).toBe(0.85);
+
+      // With 0.85 threshold, a 0.80 detection is suppressed
+      const belowResult = await aiService.detectObjectsFromFrame('FRAME_PERSON_CONF_0.80');
+      expect(belowResult.objects?.length).toBe(0);
+      expect(belowResult.warning).toBeNull();
+
+      // With 0.85 threshold, an 0.85 detection is accepted
+      const exactResult = await aiService.detectObjectsFromFrame('FRAME_PERSON_CONF_0.85');
+      expect(exactResult.objects?.length).toBe(1);
+      expect(exactResult.warning).toBe('Person ahead, be careful');
+
+      // Reset to default
+      aiService.setConfidenceThreshold(0.75);
+      expect(aiService.getConfidenceThreshold()).toBe(0.75);
+    });
+  });
+
   describe('NavigationService', () => {
     it('manages walking route lifecycle and step progression', async () => {
       expect(navigationService.getStatus()).toBe('idle');

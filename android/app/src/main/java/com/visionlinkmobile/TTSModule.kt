@@ -127,18 +127,10 @@ class TTSModule(private val reactContext: ReactApplicationContext) :
             }
 
             if (!hausaReady) {
-                Log.w(TAG, "Hausa Piper model unavailable. Falling back to English (${FALLBACK_LOCALE}), NEVER French.")
-                if (!piperEnglishEngine.isReady()) {
-                    piperEnglishEngine.initialize()
-                }
-                piperEnglishEngine.speak(text, utteranceId, object : PiperEnglishEngine.Callback {
-                    override fun onStart(utteranceId: String) { sendEvent("onTTSStart", utteranceId) }
-                    override fun onDone(utteranceId: String) { sendEvent("onTTSDone", utteranceId); promise?.resolve(utteranceId) }
-                    override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
-                        sendEvent("onTTSError", utteranceId)
-                        promise?.reject(errorCode, "[$stage] $message")
-                    }
-                })
+                val failureMsg = "Hausa Piper neural TTS model (Malama Asabe) is unavailable."
+                Log.e(TAG, "[EdgeAI] $failureMsg Locale: $HAUSA_LOCALE. Zero silent fallback to other languages.")
+                sendEvent("onTTSError", utteranceId)
+                promise?.reject("HAUSA_PIPER_UNAVAILABLE", failureMsg)
                 return
             }
 
@@ -153,18 +145,9 @@ class TTSModule(private val reactContext: ReactApplicationContext) :
                 }
 
                 override fun onError(utteranceId: String, stage: String, errorCode: String, message: String) {
-                    Log.e(TAG, "Piper Hausa error [$stage/$errorCode]: $message on utterance: $utteranceId. Falling back to ${FALLBACK_LOCALE}.")
-                    if (!piperEnglishEngine.isReady()) {
-                        piperEnglishEngine.initialize()
-                    }
-                    piperEnglishEngine.speak(text, utteranceId, object : PiperEnglishEngine.Callback {
-                        override fun onStart(uid: String) { sendEvent("onTTSStart", uid) }
-                        override fun onDone(uid: String) { sendEvent("onTTSDone", uid); promise?.resolve(uid) }
-                        override fun onError(uid: String, s: String, c: String, m: String) {
-                            sendEvent("onTTSError", uid)
-                            promise?.reject(c, "[$s] $m")
-                        }
-                    })
+                    Log.e(TAG, "[EdgeAI] Piper Hausa error [$stage/$errorCode]: $message on utterance: $utteranceId. Zero silent fallback.")
+                    sendEvent("onTTSError", utteranceId)
+                    promise?.reject(errorCode, "[$stage] $message")
                 }
             })
             return

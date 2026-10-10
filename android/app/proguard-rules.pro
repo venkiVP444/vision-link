@@ -8,3 +8,7 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+-keep class com.herohan.uvcapp.** { *; }
+-keep class com.serenegiant.usb.** { *; }
+-keepclassmembers class * implements com.serenegiant.usb.IButtonCallback {*;}
+-keepclassmembers class * implements com.serenegiant.usb.IFrameCallback {*;}

@@ -16,6 +16,7 @@ import {
   AccessibleCard,
 } from '../components';
 import { Colors, Typography, Spacing } from '../theme';
+import { aiService, DEFAULT_CONFIDENCE_THRESHOLD } from '../features/ai/aiService';
 import { ttsService, TTS_LANGUAGE_OPTIONS } from '../features/tts/ttsService';
 import { VOICE_REGISTRY, VoicePackStatus } from '../features/tts/voiceRegistry';
 import { TTSLanguage, TTSLanguageOption } from '../types';
@@ -39,7 +40,9 @@ export const SettingsScreen: React.FC = () => {
   const [downloadingLang, setDownloadingLang] = useState<string | null>(null);
 
   // Detection Preferences
-  const [strictThreshold, setStrictThreshold] = useState<boolean>(false);
+  const [strictThreshold, setStrictThreshold] = useState<boolean>(
+    aiService.getConfidenceThreshold() >= 0.85
+  );
   const [proximityAlerts, setProximityAlerts] = useState<boolean>(true);
 
   // Refresh voice pack statuses
@@ -386,7 +389,10 @@ export const SettingsScreen: React.FC = () => {
             </View>
             <Switch
               value={strictThreshold}
-              onValueChange={setStrictThreshold}
+              onValueChange={(val) => {
+                setStrictThreshold(val);
+                aiService.setConfidenceThreshold(val ? 0.85 : DEFAULT_CONFIDENCE_THRESHOLD);
+              }}
               thumbColor={strictThreshold ? Colors.primary : Colors.outline}
               trackColor={{ false: Colors.outlineVariant, true: Colors.primaryContainer }}
               accessibilityLabel="Toggle High Confidence Filter"

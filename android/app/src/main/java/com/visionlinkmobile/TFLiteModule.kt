@@ -13,6 +13,8 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class TFLiteModule(private val reactContext: ReactApplicationContext) :
     ReactContextBaseJavaModule(reactContext) {
@@ -24,16 +26,18 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
         private const val INPUT_SIZE = 300
         private const val NUM_CHANNELS = 3
         private const val MAX_DETECTIONS = 10
-        private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.50f
+        private const val DEFAULT_CONFIDENCE_THRESHOLD = 0.75f
 
         val ESSENTIAL_OBJECT_ALLOWLIST = setOf(
             "person", "car", "motorcycle", "bicycle", "bus", "truck",
-            "stop sign", "fire hydrant", "bench", "dog", "chair", "couch",
+            "traffic light", "fire hydrant", "stop sign", "bench", "dog",
+            "chair", "couch", "sofa",
             "dining table", "table", "bed", "toilet", "potted plant",
             "backpack", "umbrella", "suitcase", "tv"
         )
     }
 
+    private val inferenceExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var interpreter: Interpreter? = null
     private var labels: List<String> = emptyList()
     private var isInitialized = false
@@ -83,13 +87,17 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
             modelChannels = inShape[3]
         }
 
-        Log.i(TAG, "[TFLite] Input tensor shape = ${inShape.contentToString()}")
-        Log.i(TAG, "[TFLite] Input type = $modelDataType")
+        try {
+            val quantParams = inTensor.quantizationParams()
+            Log.i(TAG, "[TFLite] Input tensor 0: name=${inTensor.name()}, shape=${inShape.contentToString()}, type=$modelDataType, quant(scale=${quantParams.scale}, zeroPoint=${quantParams.zeroPoint})")
+        } catch (_: Exception) {
+            Log.i(TAG, "[TFLite] Input tensor 0: shape=${inShape.contentToString()}, type=$modelDataType")
+        }
 
         val outputCount = interp.outputTensorCount
         for (i in 0 until outputCount) {
             val outTensor = interp.getOutputTensor(i)
-            Log.i(TAG, "[TFLite] Output tensor $i = ${outTensor.shape().contentToString()} ${outTensor.dataType()}")
+            Log.i(TAG, "[TFLite] Output tensor $i: name=${outTensor.name()}, shape=${outTensor.shape().contentToString()}, type=${outTensor.dataType()}")
         }
 
         labels = reactContext.assets.open(LABELS_PATH).bufferedReader().readLines()
@@ -146,7 +154,7 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun detectObjects(imageInput: Dynamic, minConfidence: Double, promise: Promise) {
-        Thread {
+        inferenceExecutor.execute {
             try {
                 if (!isInitialized || interpreter == null) {
                     loadModelAndLabels()
@@ -155,7 +163,7 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                 val activeInterpreter = interpreter
                 if (activeInterpreter == null) {
                     promise.reject("NOT_INITIALIZED", "TFLite interpreter is not available.")
-                    return@Thread
+                    return@execute
                 }
 
                 val frameInput = when (imageInput.type) {
@@ -172,13 +180,13 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                     }
                     else -> {
                         promise.reject("INVALID_INPUT", "Expected base64 string or frame payload map.")
-                        return@Thread
+                        return@execute
                     }
                 }
 
                 if (frameInput.data.isBlank()) {
                     promise.reject("INVALID_INPUT", "Base64 image string is empty.")
-                    return@Thread
+                    return@execute
                 }
 
                 // Clean Base64 data header if present (e.g. data:image/jpeg;base64,...)
@@ -192,13 +200,13 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                     Base64.decode(cleanBase64, Base64.DEFAULT)
                 } catch (e: Exception) {
                     promise.reject("DECODE_ERROR", "Failed to decode base64 image: ${e.message}")
-                    return@Thread
+                    return@execute
                 }
 
                 val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                 if (bitmap == null) {
                     promise.reject("BITMAP_ERROR", "Failed to decode image bytes into Android Bitmap.")
-                    return@Thread
+                    return@execute
                 }
 
                 // Step 4: Resize to model's actual input dimensions
@@ -240,10 +248,17 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                 }
                 inputBuffer.rewind()
 
-                // Step 5 requirement logs:
-                Log.i(TAG, "[EdgeAI] Running inference frameSeq=${frameInput.frameSequence}")
-                Log.i(TAG, "[EdgeAI] inputBuffer position=${inputBuffer.position()}")
-                Log.i(TAG, "[EdgeAI] inputBuffer capacity=${inputBuffer.capacity()}")
+                // Diagnostic log for RGB channels and input tensor capacity
+                if (inputBuffer.capacity() >= 6) {
+                    val r0 = inputBuffer.get(0).toInt() and 0xFF
+                    val g0 = inputBuffer.get(1).toInt() and 0xFF
+                    val b0 = inputBuffer.get(2).toInt() and 0xFF
+                    val r1 = inputBuffer.get(3).toInt() and 0xFF
+                    val g1 = inputBuffer.get(4).toInt() and 0xFF
+                    val b1 = inputBuffer.get(5).toInt() and 0xFF
+                    Log.i(TAG, "[TFLite] First 2 RGB pixels: [R=$r0, G=$g0, B=$b0], [R=$r1, G=$g1, B=$b1]")
+                }
+                Log.i(TAG, "[EdgeAI] Running inference frameSeq=${frameInput.frameSequence} inputBuffer capacity=${inputBuffer.capacity()} bytes (expected 270000 bytes)")
 
                 // Step 7: Verify output tensors
                 // Output 0: Bounding boxes [1, 10, 4]
@@ -270,7 +285,7 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                 } catch (tfliteEx: Exception) {
                     Log.e(TAG, "[EdgeAI] TFLite inference FAILED: ${tfliteEx.message}", tfliteEx)
                     promise.reject("TFLITE_INFERENCE_FAILED", "[EdgeAI] TFLite inference FAILED: ${tfliteEx.message}", tfliteEx)
-                    return@Thread
+                    return@execute
                 }
                 val inferenceTimeMs = SystemClock.elapsedRealtime() - startTime
 
@@ -289,7 +304,7 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
                 }
 
                 // Step 7 requirement logs:
-                Log.i(TAG, "[EdgeAI] inference completed")
+                Log.i(TAG, "[EdgeAI] inference completed in ${inferenceTimeMs}ms")
                 Log.i(TAG, "[EdgeAI] detectionCount=$rawDetectionCount")
                 Log.i(TAG, "[EdgeAI] bestScore=${String.format(java.util.Locale.US, "%.2f", bestScore)}")
                 Log.i(TAG, "[EdgeAI] bestClassId=$bestClassId")
@@ -301,85 +316,90 @@ class TFLiteModule(private val reactContext: ReactApplicationContext) :
 
                 for (i in 0 until rawDetectionCount) {
                     val score = outputScores[0][i]
-                    if (score >= threshold) {
-                        val classId = outputClasses[0][i].toInt()
-                        // Category ID in labelmap is 1-based (index 0 is '???', index 1 is 'person')
-                        if (classId !in 0 until (labels.size - 1)) {
-                            Log.w(TAG, "[OfflineAI] Invalid classId=$classId (out of bounds). Skipping.")
-                            continue
-                        }
-                        val rawLabel = labels[classId + 1].trim()
-                        if (rawLabel == "???" || rawLabel.isBlank() || rawLabel.equals("object", ignoreCase = true)) {
-                            Log.w(TAG, "[OfflineAI] Unmapped/unknown label for classId=$classId. Skipping.")
-                            continue
-                        }
+                    val classId = outputClasses[0][i].toInt()
 
-                        // Step 8: Top-20 filter
-                        val isAllowed = ESSENTIAL_OBJECT_ALLOWLIST.contains(rawLabel.lowercase())
-                        val displayLabel = when (rawLabel.lowercase()) {
-                            "dining table", "table" -> "Table"
-                            "tv" -> "TV"
-                            "stop sign" -> "Stop sign"
-                            "fire hydrant" -> "Fire hydrant"
-                            "potted plant" -> "Potted plant"
-                            else -> rawLabel.replaceFirstChar { it.uppercase() }
-                        }
-                        val itemWarning = "$displayLabel ahead, be careful"
+                    // Bounds check against loaded labels from labels.txt.
+                    // SSD MobileNet v1 outputs 0-based classes (0=person, 2=car, 61=chair).
+                    // In labels.txt: index 0 is '???', index 1 is 'person', index 3 is 'car', index 62 is 'chair'.
+                    // Therefore, the exact mapping is labels[classId + 1].
+                    if (classId < 0 || classId >= labels.size - 1) {
+                        Log.w(TAG, "[OfflineAI] Out-of-bounds classId=$classId (labels size=${labels.size}). Skipping.")
+                        continue
+                    }
 
-                        Log.i(TAG, """
+                    val rawLabel = labels[classId + 1].trim()
+                    if (rawLabel == "???" || rawLabel.isBlank()) {
+                        Log.d(TAG, "[OfflineAI] Placeholder/unknown label for classId=$classId. Skipping.")
+                        continue
+                    }
+
+                    val isAllowed = ESSENTIAL_OBJECT_ALLOWLIST.contains(rawLabel.lowercase())
+                    val displayLabel = when (rawLabel.lowercase()) {
+                        "dining table", "table" -> "Table"
+                        "tv" -> "TV"
+                        "stop sign" -> "Stop sign"
+                        "fire hydrant" -> "Fire hydrant"
+                        "traffic light" -> "Traffic light"
+                        "potted plant" -> "Potted plant"
+                        else -> rawLabel.replaceFirstChar { if (it.isLowerCase()) it.titlecase(java.util.Locale.US) else it.toString() }
+                    }
+                    val itemWarning = if (isAllowed) "$displayLabel ahead, be careful" else "None"
+
+                    Log.i(TAG, """
 [EdgeAI]
 Class ID: $classId
 Confidence: ${String.format(java.util.Locale.US, "%.2f", score)}
-Label: $rawLabel
+Label: ${rawLabel.lowercase()}
 Allowed: $isAllowed
 Warning: ${if (isAllowed) itemWarning else "None"}
 TTS: ${if (isAllowed) itemWarning else "None"}
 Camera Connection State: connected
 """.trimIndent())
 
+                    if (!isAllowed || score < threshold) {
                         if (!isAllowed) {
-                            Log.d(TAG, "[OfflineAI] Object '$rawLabel' (classId=$classId) not in essential allowlist. Ignoring.")
-                            continue
+                            Log.d(TAG, "[OfflineAI] Object '$displayLabel' (classId=$classId) not in essential allowlist. Ignoring.")
                         }
+                        continue
+                    }
 
-                        val ymin = outputBoxes[0][i][0].coerceIn(0.0f, 1.0f)
-                        val xmin = outputBoxes[0][i][1].coerceIn(0.0f, 1.0f)
-                        val ymax = outputBoxes[0][i][2].coerceIn(0.0f, 1.0f)
-                        val xmax = outputBoxes[0][i][3].coerceIn(0.0f, 1.0f)
+                    val ymin = outputBoxes[0][i][0].coerceIn(0.0f, 1.0f)
+                    val xmin = outputBoxes[0][i][1].coerceIn(0.0f, 1.0f)
+                    val ymax = outputBoxes[0][i][2].coerceIn(0.0f, 1.0f)
+                    val xmax = outputBoxes[0][i][3].coerceIn(0.0f, 1.0f)
 
-                        val centerX = (xmin + xmax) / 2.0f
-                        val position = when {
-                            centerX < 0.35f -> "left"
-                            centerX > 0.65f -> "right"
-                            else -> "ahead"
+                    val centerX = (xmin + xmax) / 2.0f
+                    val position = when {
+                        centerX < 0.35f -> "left"
+                        centerX > 0.65f -> "right"
+                        else -> "ahead"
+                    }
+
+                    val formattedLabel = displayLabel
+
+                    val objMap = Arguments.createMap().apply {
+                        putString("label", formattedLabel)
+                        putDouble("confidence", score.toDouble())
+                        putString("position", position)
+                        putInt("classId", classId)
+                        val boxMap = Arguments.createMap().apply {
+                            putDouble("ymin", ymin.toDouble())
+                            putDouble("xmin", xmin.toDouble())
+                            putDouble("ymax", ymax.toDouble())
+                            putDouble("xmax", xmax.toDouble())
+                            putDouble("x", xmin.toDouble() * frameInput.width)
+                            putDouble("y", ymin.toDouble() * frameInput.height)
+                            putDouble("width", (xmax - xmin).toDouble() * frameInput.width)
+                            putDouble("height", (ymax - ymin).toDouble() * frameInput.height)
                         }
+                        putMap("boundingBox", boxMap)
+                    }
+                    objectsArray.pushMap(objMap)
 
-                        val formattedLabel = displayLabel
-
-                        val objMap = Arguments.createMap().apply {
-                            putString("label", formattedLabel)
-                            putDouble("confidence", score.toDouble())
-                            putString("position", position)
-                            putInt("classId", classId)
-                            val boxMap = Arguments.createMap().apply {
-                                putDouble("ymin", ymin.toDouble())
-                                putDouble("xmin", xmin.toDouble())
-                                putDouble("ymax", ymax.toDouble())
-                                putDouble("xmax", xmax.toDouble())
-                                putDouble("x", xmin.toDouble() * frameInput.width)
-                                putDouble("y", ymin.toDouble() * frameInput.height)
-                                putDouble("width", (xmax - xmin).toDouble() * frameInput.width)
-                                putDouble("height", (ymax - ymin).toDouble() * frameInput.height)
-                            }
-                            putMap("boundingBox", boxMap)
-                        }
-                        objectsArray.pushMap(objMap)
-
-                        if (score > highestScore) {
-                            highestScore = score
-                            primaryLabel = formattedLabel
-                            primaryPosition = position
-                        }
+                    if (score > highestScore) {
+                        highestScore = score
+                        primaryLabel = formattedLabel
+                        primaryPosition = position
                     }
                 }
 
@@ -416,6 +436,18 @@ Camera Connection State: connected
                 Log.e(TAG, "[OfflineAI] Inference error: ${e.message}", e)
                 promise.reject("INFERENCE_ERROR", "Failed to run TFLite inference: ${e.message}", e)
             }
-        }.start()
+        }
+    }
+
+    override fun invalidate() {
+        super.invalidate()
+        try {
+            inferenceExecutor.shutdown()
+        } catch (_: Exception) {}
+        try {
+            interpreter?.close()
+        } catch (_: Exception) {}
+        interpreter = null
+        isInitialized = false
     }
 }
