@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import {
   AccessibleButton,
@@ -23,7 +23,21 @@ type DetectionDisplayState =
   | 'no-warning'
   | 'error';
 
-const DEBOUNCE_INTERVAL_MS = 8000;
+export const DEFAULT_OBJECT_DEBOUNCE_CONFIG = {
+  // If the same object remains continuously detected, wait at least this long before repeating
+  continuousCooldownMs: 12000,
+  // If an object is absent/unseen for this long, it is considered to have disappeared;
+  // when seen again, it will be announced immediately with zero latency.
+  disappearanceWindowMs: 2500,
+  // Number of consecutive valid inference frames without obstacles required before certifying path is clear
+  clearPathConsecutiveFrames: 2,
+};
+
+interface ObjectTrackState {
+  lastAnnouncedTimestamp: number;
+  lastSeenTimestamp: number;
+  isAnnounced: boolean;
+}
 
 export const ObjectDetectionScreen: React.FC = () => {
   const navigation = useNavigation();
@@ -35,7 +49,8 @@ export const ObjectDetectionScreen: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [detectedObjects, setDetectedObjects] = useState<DetectedObject[]>([]);
   const [lastInferenceMs, setLastInferenceMs] = useState<number | null>(null);
-  const [speaking, setSpeaking] = useState<boolean>(ttsService.isSpeaking());
+  const [_speaking, setSpeaking] = useState<boolean>(ttsService.isSpeaking());
+  const [currentFrameUri, setCurrentFrameUri] = useState<string | null>(null);
 
   const lastSpokenRef = useRef<{ warning: string | null; timestamp: number }>({
     warning: null,
@@ -45,9 +60,12 @@ export const ObjectDetectionScreen: React.FC = () => {
     warning: null,
     timestamp: 0,
   });
+  const objectTrackMapRef = useRef<Map<string, ObjectTrackState>>(new Map());
+  const consecutiveClearFramesRef = useRef<number>(0);
   const isProcessingRef = useRef<boolean>(false);
   const isFaceProcessingRef = useRef<boolean>(false);
   const prevCamStatusRef = useRef<CameraStatus>(cameraService.getStatus());
+  const executeDetectionCycleRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
     const unsubTTS = ttsService.onStateChange((isSpk) => {
@@ -65,7 +83,10 @@ export const ObjectDetectionScreen: React.FC = () => {
         ttsService.stopSpeaking();
         lastSpokenRef.current = { warning: null, timestamp: 0 };
         lastFaceSpokenRef.current = { warning: null, timestamp: 0 };
+        objectTrackMapRef.current.clear();
+        consecutiveClearFramesRef.current = 0;
         isFaceProcessingRef.current = false;
+        setCurrentFrameUri(null);
         setWarningText(null);
         setDetectedObjects([]);
         setDisplayState('idle');
@@ -101,17 +122,21 @@ export const ObjectDetectionScreen: React.FC = () => {
       console.warn('[ObjectDetectionScreen] Pre-load model error:', err);
     });
 
+    const currentTrackMap = objectTrackMapRef.current;
+
     return () => {
       unsubTTS();
       unsubCam();
       ttsService.stopSpeaking();
       lastSpokenRef.current = { warning: null, timestamp: 0 };
       lastFaceSpokenRef.current = { warning: null, timestamp: 0 };
+      currentTrackMap.clear();
+      consecutiveClearFramesRef.current = 0;
       isFaceProcessingRef.current = false;
     };
   }, []);
 
-  const announceWarningWithDebounce = async (warning: string) => {
+  const announceWarningWithDebounce = async (warning: string, objectLabel?: string) => {
     const prefs = ttsService.getPreferences();
     if (!prefs.autoAnnounceDetections) {
       console.log('[ObjectDetectionScreen] Auto-Announce is OFF. Speech suppressed.');
@@ -123,26 +148,42 @@ export const ObjectDetectionScreen: React.FC = () => {
     }
 
     const now = Date.now();
-    const last = lastSpokenRef.current;
+    const key = (objectLabel || warning).toLowerCase().trim();
+    const track = objectTrackMapRef.current.get(key);
 
-    const isSameObject = last.warning === warning;
-    const isDuplicate = isSameObject && (now - last.timestamp < DEBOUNCE_INTERVAL_MS);
+    const hasDisappeared = !track || (now - track.lastSeenTimestamp > DEFAULT_OBJECT_DEBOUNCE_CONFIG.disappearanceWindowMs);
+    const continuousElapsed = track ? (now - track.lastAnnouncedTimestamp) : Infinity;
 
-    if (isDuplicate) {
-      console.log('[ObjectDetectionScreen] Duplicate warning suppressed within debounce window:', warning);
+    // Check if announcement should occur for this object:
+    // 1. Newly detected or reappeared after disappearance window: announce immediately with zero latency.
+    // 2. Continuously detected: suppress repeated announcements until continuousCooldownMs has elapsed.
+    const shouldAnnounce = hasDisappeared || (continuousElapsed >= DEFAULT_OBJECT_DEBOUNCE_CONFIG.continuousCooldownMs);
+
+    // Update track record
+    objectTrackMapRef.current.set(key, {
+      lastAnnouncedTimestamp: shouldAnnounce ? now : (track ? track.lastAnnouncedTimestamp : now),
+      lastSeenTimestamp: now,
+      isAnnounced: shouldAnnounce ? true : (track ? track.isAnnounced : true),
+    });
+
+    if (!shouldAnnounce) {
+      console.log(`[ObjectDetectionScreen] Debounced repeated announcement for "${key}" (cooldown remaining: ${Math.max(0, DEFAULT_OBJECT_DEBOUNCE_CONFIG.continuousCooldownMs - continuousElapsed)}ms)`);
       return;
     }
 
+    const last = lastSpokenRef.current;
+    const isSameWarning = last.warning === warning;
+
     // When detection changes (e.g. Chair -> Person):
     // Immediately cancel and stop any stale TTS and speak the new object.
-    if (!isSameObject && ttsService.isSpeaking()) {
+    if (!isSameWarning && ttsService.isSpeaking()) {
       console.log('[ObjectDetectionScreen] Object changed from', last.warning, 'to', warning, '- cancelling stale TTS');
       try {
         await ttsService.stopSpeaking();
       } catch (err) {
         console.warn('[ObjectDetectionScreen] Error stopping stale speech:', err);
       }
-    } else if (isSameObject && ttsService.isSpeaking()) {
+    } else if (isSameWarning && ttsService.isSpeaking()) {
       console.log('[ObjectDetectionScreen] TTS is currently speaking same warning. Avoiding overlapping audio.');
       return;
     }
@@ -208,6 +249,8 @@ export const ObjectDetectionScreen: React.FC = () => {
       setDetectedObjects([]);
       ttsService.stopSpeaking();
       lastSpokenRef.current = { warning: null, timestamp: 0 };
+      objectTrackMapRef.current.clear();
+      consecutiveClearFramesRef.current = 0;
       return;
     }
 
@@ -218,23 +261,27 @@ export const ObjectDetectionScreen: React.FC = () => {
       const frame = await cameraService.captureFrame();
 
       if (!frame) {
-        // No fresh frame available yet from ImageReader; reset state so UI does not stay in loading or retain stale clear path
-        if (displayState === 'processing' || displayState === 'capturing' || displayState === 'no-warning') {
+        // Missing frame: treat as unknown, reset consecutive clear frame counter, do not assume path is clear
+        consecutiveClearFramesRef.current = 0;
+        if (displayState === 'processing' || displayState === 'capturing') {
           setDisplayState('idle');
         }
         return;
+      }
+
+      const frameUri = typeof frame === 'string' ? frame : frame.data;
+      if (frameUri) {
+        setCurrentFrameUri(frameUri);
       }
 
       if (displayState === 'idle') {
         setDisplayState('processing');
       }
 
-      // Trigger independent face detection on the exact same frame without blocking object detection
-      runIndependentFaceDetection(frame);
-
       const result = await aiService.detectObjectsFromFrame(frame, aiService.getConfidenceThreshold());
 
       if (result.status === 'error') {
+        consecutiveClearFramesRef.current = 0;
         setDisplayState('error');
         setErrorMessage(result.errorMessage || 'Unable to process camera frame.');
         return;
@@ -245,31 +292,46 @@ export const ObjectDetectionScreen: React.FC = () => {
       }
       setDetectedObjects(result.objects || []);
 
-      if (result.warning && result.warning.trim().length > 0) {
+      // Trigger independent face detection safely on the frame
+      runIndependentFaceDetection(frame);
+
+      if (result.warning && result.warning.trim().length > 0 && result.objects && result.objects.length > 0) {
+        consecutiveClearFramesRef.current = 0;
         setDisplayState('warning');
         setWarningText(result.warning);
         setErrorMessage(null);
         const prefs = ttsService.getPreferences();
         const spokenSentence = ttsService.translateDetectionWarning(result.warning, prefs.language);
+        const primaryLabel = result.objects[0]?.label || undefined;
         console.log(`[EdgeAI] final warning="${result.warning}" | TTS text="${spokenSentence}"`);
-        await announceWarningWithDebounce(spokenSentence);
+        await announceWarningWithDebounce(spokenSentence, primaryLabel);
       } else {
-        setDisplayState('no-warning');
-        setWarningText(null);
-        setDetectedObjects([]);
-        setErrorMessage(null);
-        // Requirement: Clear-path logic / no sticky labels
-        // When no valid allowed object is detected:
-        // - Clear current detection state immediately
-        // - Stay silent
-        // - Stop previous TTS if speaking
-        // - Reset lastSpokenRef so future reappearance is treated as a new detection
-        if (ttsService.isSpeaking()) {
-          ttsService.stopSpeaking();
+        // Valid inference frame with NO qualifying obstacles
+        consecutiveClearFramesRef.current += 1;
+
+        // Prune or reset disappeared objects from track map
+        const now = Date.now();
+        objectTrackMapRef.current.forEach((track) => {
+          if (now - track.lastSeenTimestamp > DEFAULT_OBJECT_DEBOUNCE_CONFIG.disappearanceWindowMs) {
+            track.isAnnounced = false;
+          }
+        });
+
+        // Require multiple consecutive valid frames before declaring path clear
+        if (consecutiveClearFramesRef.current >= DEFAULT_OBJECT_DEBOUNCE_CONFIG.clearPathConsecutiveFrames) {
+          setDisplayState('no-warning');
+          setWarningText(null);
+          setDetectedObjects([]);
+          setErrorMessage(null);
+          // Default to silence when path is clear (maintain quiet mode; only manual announce speaks)
+          if (ttsService.isSpeaking()) {
+            ttsService.stopSpeaking();
+          }
+          lastSpokenRef.current = { warning: null, timestamp: 0 };
         }
-        lastSpokenRef.current = { warning: null, timestamp: 0 };
       }
     } catch (err: any) {
+      consecutiveClearFramesRef.current = 0;
       console.warn('[ObjectDetectionScreen] Detection cycle error:', err);
       setDisplayState('error');
       setErrorMessage(err?.message || 'Detection failed');
@@ -277,6 +339,8 @@ export const ObjectDetectionScreen: React.FC = () => {
       isProcessingRef.current = false;
     }
   };
+
+  executeDetectionCycleRef.current = executeDetectionCycle;
 
   // Automated continuous hands-free detection loop
   useEffect(() => {
@@ -290,7 +354,7 @@ export const ObjectDetectionScreen: React.FC = () => {
         return;
       }
 
-      await executeDetectionCycle();
+      await executeDetectionCycleRef.current();
 
       if (isMounted) {
         timerId = setTimeout(runLoop, 350);
@@ -365,31 +429,60 @@ export const ObjectDetectionScreen: React.FC = () => {
         ) : null}
       </View>
 
-      {/* Detection Viewport Simulation */}
-      <View
+      {/* Real-time UVC Camera Viewport */}
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={handleManualAnnounce}
         accessible={true}
         accessibilityRole="image"
-        accessibilityLabel={`Detection Viewport. Status: ${displayState}`}
+        accessibilityLabel={`Detection Viewport. Status: ${displayState}. Tap to hear audio announcement.`}
+        accessibilityHint="Tap to hear current obstacle analysis"
         style={styles.viewport}
       >
-        <Text style={styles.viewportTitle}>
-          {cameraStatus === 'disconnected'
-            ? 'CAMERA DISCONNECTED'
-            : displayState === 'capturing'
-            ? 'CAPTURING CAMERA FRAME'
-            : displayState === 'processing'
-            ? 'RUNNING ON-DEVICE INFERENCE'
-            : 'EDGE-AI VIEWPORT READY'}
-        </Text>
-        <Text style={styles.viewportSubtitle}>
-          Engine: TFLite (100% Offline • SSD MobileNet v1)
-        </Text>
-        {lastInferenceMs !== null && (
-          <Text style={styles.latencyBadge}>
-            ⚡ Inference: {lastInferenceMs}ms on-device
-          </Text>
+        {currentFrameUri && (cameraStatus === 'connected' || cameraStatus === 'streaming') ? (
+          <Image
+            source={{ uri: currentFrameUri }}
+            style={styles.viewportImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.viewportPlaceholder}>
+            <Text style={styles.viewportTitle}>
+              {cameraStatus === 'disconnected'
+                ? 'CAMERA DISCONNECTED'
+                : displayState === 'capturing'
+                ? 'CAPTURING CAMERA FRAME'
+                : displayState === 'processing'
+                ? 'RUNNING ON-DEVICE INFERENCE'
+                : 'EDGE-AI VIEWPORT READY'}
+            </Text>
+            <Text style={styles.viewportSubtitle}>
+              Engine: TFLite (100% Offline • SSD MobileNet v1)
+            </Text>
+          </View>
         )}
-      </View>
+
+        <View style={styles.viewportOverlay}>
+          <View style={styles.viewportBadgeRow}>
+            <View style={styles.liveBadge}>
+              <View
+                style={[
+                  styles.liveDot,
+                  (cameraStatus === 'connected' || cameraStatus === 'streaming') && styles.liveDotActive,
+                ]}
+              />
+              <Text style={styles.liveText}>
+                {cameraStatus === 'streaming' ? 'UVC LIVE' : cameraStatus.toUpperCase()}
+              </Text>
+            </View>
+            {lastInferenceMs !== null && (
+              <Text style={styles.latencyBadge}>
+                ⚡ {lastInferenceMs}ms on-device
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
 
       {/* Active State View */}
       <View style={styles.stateContainer}>
@@ -563,15 +656,61 @@ const styles = StyleSheet.create({
     color: Colors.onSurface,
   },
   viewport: {
-    height: 140,
+    height: 190,
     backgroundColor: '#0F172A',
     borderRadius: BorderRadius.lg,
     borderWidth: 2,
     borderColor: Colors.primary,
-    padding: Spacing.md,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: Spacing.md,
+  },
+  viewportImage: {
+    width: '100%',
+    height: '100%',
+  },
+  viewportPlaceholder: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: Spacing.md,
+    padding: Spacing.md,
+  },
+  viewportOverlay: {
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.sm,
+    right: Spacing.sm,
+  },
+  viewportBadgeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#94A3B8',
+    marginRight: 6,
+  },
+  liveDotActive: {
+    backgroundColor: '#10B981',
+  },
+  liveText: {
+    color: '#F8FAFC',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
   },
   viewportTitle: {
     ...Typography.labelLarge,
@@ -591,7 +730,12 @@ const styles = StyleSheet.create({
     color: '#34D399',
     fontSize: 11,
     fontWeight: '700',
-    marginTop: 6,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
   },
   stateContainer: {
     marginBottom: Spacing.md,

@@ -13,6 +13,8 @@ import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
 
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
@@ -183,6 +185,28 @@ class MainActivity : ReactActivity(), TextToSpeech.OnInitListener {
       registerReceiver(ttsReceiver, filter, Context.RECEIVER_EXPORTED)
     } else {
       registerReceiver(ttsReceiver, filter)
+    }
+    handleUsbIntent(intent)
+  }
+
+  override fun onNewIntent(intent: Intent?) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleUsbIntent(intent)
+  }
+
+  private fun handleUsbIntent(intent: Intent?) {
+    if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
+      val device: UsbDevice? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+      } else {
+        @Suppress("DEPRECATION")
+        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+      }
+      if (device != null) {
+        Log.i("VisionLinkUSB", "MainActivity received USB_DEVICE_ATTACHED: ${device.deviceName} (Vendor: 0x${Integer.toHexString(device.vendorId)}, Product: 0x${Integer.toHexString(device.productId)})")
+        UsbCameraModule.onDeviceAttachedFromIntent(device)
+      }
     }
   }
 

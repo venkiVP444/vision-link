@@ -445,7 +445,7 @@ export class TTSService implements ITTSService {
   private listeners: Set<TTSStateListener> = new Set();
 
   private preferences: TTSPreferences = {
-    speechRate: 1.0,
+    speechRate: 1.05,
     pitch: 1.0,
     autoAnnounceDetections: true,
     language: 'en-GB',
@@ -456,10 +456,18 @@ export class TTSService implements ITTSService {
       try {
         const emitter = new NativeEventEmitter(TTSModule);
         emitter.addListener('onTTSDone', () => {
+          if (this.timeoutId) {
+            clearTimeout(this.timeoutId);
+            this.timeoutId = null;
+          }
           this.speaking = false;
           this.notifyListeners();
         });
         emitter.addListener('onTTSError', () => {
+          if (this.timeoutId) {
+            clearTimeout(this.timeoutId);
+            this.timeoutId = null;
+          }
           this.speaking = false;
           this.notifyListeners();
         });
@@ -840,6 +848,11 @@ export class TTSService implements ITTSService {
       }
     }
 
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+
     this.speaking = true;
     this.lastSpokenText = spokenText;
     console.log('[EdgeAI] TTS text:', spokenText, 'language:', targetLang);
@@ -855,6 +868,10 @@ export class TTSService implements ITTSService {
           targetLang
         );
       } catch (e: any) {
+        if (this.timeoutId) {
+          clearTimeout(this.timeoutId);
+          this.timeoutId = null;
+        }
         this.speaking = false;
         this.lastSpokenText = '';
         this.notifyListeners();
@@ -864,9 +881,11 @@ export class TTSService implements ITTSService {
     }
 
     const wordCount = spokenText.split(/\s+/).length;
-    const durationMs = Math.max(2800, wordCount * 450);
+    // Conservative responsive duration: scales at 300ms/word with 1200ms min and 2600ms cap
+    const durationMs = Math.max(1200, Math.min(2600, wordCount * 300));
 
     this.timeoutId = setTimeout(() => {
+      this.timeoutId = null;
       this.speaking = false;
       this.notifyListeners();
     }, durationMs);

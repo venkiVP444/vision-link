@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Standard UVC Video Class: class 14 (0x0E) -->
+    <usb-device class="14" />
+    <usb-device class="14" subclass="1" />
+    <usb-device class="14" subclass="2" />
+    
+    <!-- UVC IAD / Composite Devices: class 239 (0xEF), subclass 2 -->
+    <usb-device class="239" subclass="2" />
+    
+    <!-- Specific hardware IDs for Geek szitman supercamera (VID 0x349c = 13468, PID 0x8319 = 33561) -->
+    <usb-device vendor-id="13468" product-id="33561" />
+    <usb-device vendor-id="11491" product-id="14376" />
+</resources>
